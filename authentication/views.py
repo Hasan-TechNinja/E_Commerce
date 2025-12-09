@@ -230,7 +230,6 @@ class SetNewPasswordView(APIView):
         user.set_password(new_password)
         user.save()
         
-        # Optionally delete codes for this user to clean up
         PasswordResetCode.objects.filter(user=user).delete()
 
         return Response({"message": "Password reset successfully"}, status=status.HTTP_200_OK)

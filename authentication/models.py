@@ -23,3 +23,10 @@ class PasswordResetCode(models.Model):
         from django.utils import timezone
         from datetime import timedelta
         return timezone.now() > self.created_at + timedelta(minutes=3)
+    
+class Profile(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    image = models.ImageField(upload_to='profile', null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.user.first_name}'s Profile"
