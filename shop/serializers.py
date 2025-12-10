@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from . models import Type, Product, ProductImage, Review
+from . models import Type, Product, ProductImage, Review, CartItem
 
 
 class TypeSerializer(serializers.ModelSerializer):
@@ -26,4 +26,10 @@ class ProductSerializer(serializers.ModelSerializer):
     reviews = ReviewSerializer(many=True, read_only=True)
     class Meta:
         model = Product
+        fields = '__all__'
+
+class CartItemSerializer(serializers.ModelSerializer):
+    product = ProductSerializer()
+    class Meta:
+        model = CartItem
         fields = '__all__'
