@@ -139,3 +139,38 @@ class PasswordResetFlowTest(TestCase):
         response = self.client.post(self.reset_url, data)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data['error'], 'Passwords do not match')
+
+class SocialLoginTest(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.url = reverse('social-login')
+        self.user_data = {
+            'email': 'socialuser@example.com',
+        }
+
+    def test_social_login_existing_user(self):
+        # Create user first
+        User.objects.create_user(username='socialuser@example.com', email='socialuser@example.com')
+        
+        response = self.client.post(self.url, self.user_data)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('access', response.data)
+        self.assertIn('refresh', response.data)
+        self.assertEqual(response.data['email'], 'socialuser@example.com')
+
+    def test_social_login_new_user(self):
+        response = self.client.post(self.url, self.user_data)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('access', response.data)
+        self.assertIn('refresh', response.data)
+        self.assertEqual(response.data['email'], 'socialuser@example.com')
+        
+        # Verify user created
+        self.assertTrue(User.objects.filter(email='socialuser@example.com').exists())
+        user = User.objects.get(email='socialuser@example.com')
+        self.assertTrue(user.is_active)
+
+    def test_social_login_missing_email(self):
+        response = self.client.post(self.url, {})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['error'], 'Email is required!')

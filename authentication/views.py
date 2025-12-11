@@ -233,3 +233,66 @@ class SetNewPasswordView(APIView):
         PasswordResetCode.objects.filter(user=user).delete()
 
         return Response({"message": "Password reset successfully"}, status=status.HTTP_200_OK)
+    
+
+class SocialLogin(APIView):
+    
+    def login_user(self, user):
+        refresh = RefreshToken.for_user(user)
+        return Response({
+            'refresh': str(refresh),
+            'access': str(refresh.access_token),
+            'email': user.email
+        }, status=status.HTTP_200_OK)
+
+    def send_account_creation_email(self, user):
+        send_mail(
+            "Welcome to Our Platform",
+            "Your account has been created successfully via social login.",
+            "noreply@yourdomain.com",
+            [user.email],
+            fail_silently=True,
+        )
+
+    def post(self, request):
+        # Get the email from the request data
+        email = request.data.get('email')
+
+        if not email:
+            return Response({"error": "Email is required!"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check if the user exists
+        user = User.objects.filter(email=email).first()
+
+        if user:
+            # If the user exists, simply log them in and return tokens
+            return self.login_user(user)
+        else:
+            # If the user does not exist, create a new user
+            user = User.objects.create_user(
+                email=email,
+                username=email,
+                password=None  # No password needed for social/login
+            )
+            user.is_active = True # Social login users are verified by provider
+            user.save()
+            
+            # Send account creation email
+            self.send_account_creation_email(user)
+            
+            # Login the newly created user and return tokens
+            return self.login_user(user)
+        
+
+class LogoutView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        try:
+            refresh_token = request.data["refresh"]
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+
+            return Response({"message": "Logout successful"}, status=status.HTTP_205_RESET_CONTENT)
+        except Exception as e:
+            return Response({"error": "Invalid token"}, status=status.HTTP_400_BAD_REQUEST)
