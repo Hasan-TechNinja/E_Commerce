@@ -372,7 +372,7 @@ class ContactMessageView(APIView):
             user = None
         
         # Send email to admin
-        
+
         send_mail(
             subject='New Contact Message Received',
             message=f"""
@@ -398,3 +398,23 @@ class ContactMessageView(APIView):
         )
 
         return Response({'message': 'Contact message sent successfully'}, status=status.HTTP_201_CREATED)
+    
+
+
+class HomePageView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        products = Product.objects.all().order_by(
+            '-order_count', 
+            '-created_at',
+            )[:4]
+        
+        reviews = Review.objects.all().order_by('-rating')[:20]
+        
+        data = {
+            'products': ProductSerializer(products, many=True).data,
+            'reviews': ReviewSerializer(reviews, many=True).data
+        }
+
+        return Response(data, status=status.HTTP_200_OK)
