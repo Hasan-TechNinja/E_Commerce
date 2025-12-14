@@ -1,6 +1,6 @@
 from django.shortcuts import render
-from . models import CartItem, ContactMessage, Product, Review, Order, OrderItem, OrderAddress
-from . serializers import CartItemSerializer, ProductSerializer, ReviewSerializer, OrderSerializer
+from . models import CartItem, ContactMessage, Product, Review, Order, OrderItem, OrderAddress, Type
+from . serializers import CartItemSerializer, ProductSerializer, ReviewSerializer, OrderSerializer, TypeSerializer
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, permissions
@@ -418,3 +418,18 @@ class HomePageView(APIView):
         }
 
         return Response(data, status=status.HTTP_200_OK)
+    
+
+class TypeFilterView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        type_id = request.query_params.get('type')
+
+        products = Product.objects.all()
+
+        if type_id:
+            products = products.filter(type_id=type_id)
+
+        serializer = ProductSerializer(products, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)

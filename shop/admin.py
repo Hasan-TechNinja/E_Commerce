@@ -14,12 +14,12 @@ class ReviewInline(admin.TabularInline):
 
 @admin.register(Type)
 class TypeAdmin(admin.ModelAdmin):
-    list_display = ('name',)
+    list_display = ('id', 'name',)
     search_fields = ('name',)
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ('name', 'category', 'type', 'initial_price', 'discounted_price', 'size', 'order_count', 'created_at')
+    list_display = ('id', 'name', 'category', 'type', 'initial_price', 'discounted_price', 'size', 'order_count', 'created_at')
     list_filter = ('category', 'type', 'size', 'created_at')
     search_fields = ('name', 'description')
     readonly_fields = ('order_count',)
@@ -59,7 +59,7 @@ class ContactMessageAdmin(admin.ModelAdmin):
     list_display = ('id', 'name', 'whatsapp', 'email', 'project_details', 'sent_at')
     search_fields = ('name', 'email', 'whatsapp', 'project_details')
     list_filter = ('sent_at',)
-    
+
 
 
 
