@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Type, Product, ProductImage, Review, Order, OrderItem, OrderAddress
+from .models import Type, Product, ProductImage, Review, Order, OrderItem, OrderAddress, ContactMessage
 
 # Register your models here.
 
@@ -54,9 +54,12 @@ class OrderAdmin(admin.ModelAdmin):
     inlines = [OrderItemInline, OrderAddressInline]
     readonly_fields = ('paypal_order_id',)
 
-
-
-
+@admin.register(ContactMessage)
+class ContactMessageAdmin(admin.ModelAdmin):
+    list_display = ('id', 'name', 'whatsapp', 'email', 'project_details', 'sent_at')
+    search_fields = ('name', 'email', 'whatsapp', 'project_details')
+    list_filter = ('sent_at',)
+    
 
 
 

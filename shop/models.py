@@ -113,3 +113,15 @@ class OrderAddress(models.Model):
 
     def __str__(self):
         return f"Address for Order {self.order.id}"    
+
+
+class ContactMessage(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, blank=True, null=True)
+    name = models.CharField(max_length=255)
+    whatsapp = models.CharField(max_length=20)
+    email = models.EmailField()
+    project_details = models.TextField()
+    sent_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Message from {self.name} - {self.project_details[:30]}..."

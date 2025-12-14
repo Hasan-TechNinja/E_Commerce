@@ -135,6 +135,7 @@ EMAIL_USE_TLS = True
 EMAIL_HOST_USER = config("EMAIL_USER")
 EMAIL_HOST_PASSWORD = config("EMAIL_PASS")
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+ADMIN_EMAIL = config("ADMIN_EMAIL")
 
 PAYPAL_CLIENT_ID = config('PAYPAL_CLIENT_ID', default='test_client_id')
 PAYPAL_SECRET = config('PAYPAL_SECRET', default='test_secret')
@@ -158,8 +159,9 @@ REST_FRAMEWORK = {
         'rest_framework.throttling.AnonRateThrottle',
     ),
     'DEFAULT_THROTTLE_RATES': {
-        'user': '10/day', 
-        'anon': '10/hour', 
+        'user': '1000/day', 
+        'anon': '100/hour',
+        # 'anon': '100/minute', 
     },
 
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.LimitOffsetPagination',

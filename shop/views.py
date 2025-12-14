@@ -1,5 +1,5 @@
 from django.shortcuts import render
-from . models import CartItem, Product, Review, Order, OrderItem, OrderAddress
+from . models import CartItem, ContactMessage, Product, Review, Order, OrderItem, OrderAddress
 from . serializers import CartItemSerializer, ProductSerializer, ReviewSerializer, OrderSerializer
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -9,6 +9,8 @@ import requests
 import base64
 import decimal
 from django.db import transaction
+from django.core.mail import send_mail
+
 # PayPal Config
 PAYPAL_CLIENT_ID = settings.PAYPAL_CLIENT_ID
 PAYPAL_SECRET = settings.PAYPAL_SECRET
@@ -317,3 +319,82 @@ class OrderDetailView(APIView):
         
         serializer = OrderSerializer(order)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class CreateReviewView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        try:
+            product = Product.objects.get(pk=pk)
+        except Product.DoesNotExist:
+            return Response({"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        rating = request.data.get('rating')
+        comment = request.data.get('comment', '')
+
+        if rating is None:
+            return Response({"error": "Rating is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            rating = int(rating)
+            if rating < 0 or rating > 5:
+                raise ValueError
+        except ValueError:
+            return Response({"error": "Rating must be an integer between 0 and 5"}, status=status.HTTP_400_BAD_REQUEST)
+
+        review = Review.objects.create(
+            product=product,
+            user_name=request.user,
+            rating=rating,
+            comment=comment
+        )
+
+        serializer = ReviewSerializer(review)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    
+
+class ContactMessageView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        name = request.data.get('name')
+        whatsapp = request.data.get('whatsapp')
+        email = request.data.get('email')
+        project_details = request.data.get('project_details')
+
+        if not all([name, whatsapp, email, project_details]):
+            return Response({'error': 'All fields are required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if request.user.is_authenticated:
+            user = request.user
+        else:
+            user = None
+        
+        # Send email to admin
+        
+        send_mail(
+            subject='New Contact Message Received',
+            message=f"""
+                Name: {name}
+                Email: {email}
+                WhatsApp: {whatsapp}
+
+                Project Details:
+                {project_details}
+                            """,
+                            from_email=settings.DEFAULT_FROM_EMAIL,
+                            recipient_list=[settings.ADMIN_EMAIL],
+                            fail_silently=False,
+                        )
+        
+        
+        contact_message = ContactMessage.objects.create(
+            user = user, 
+            name = name,
+            whatsapp = whatsapp,
+            email = email,
+            project_details = project_details
+        )
+
+        return Response({'message': 'Contact message sent successfully'}, status=status.HTTP_201_CREATED)

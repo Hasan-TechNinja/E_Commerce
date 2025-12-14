@@ -14,4 +14,6 @@ urlpatterns = [
     path('paypal/capture/', views.PayPalCaptureView.as_view(), name='paypal-capture'),
     path('orders/', views.OrderListView.as_view(), name='order-list'),
     path('orders/<int:pk>/', views.OrderDetailView.as_view(), name='order-detail'),
+    path('post/review/<int:pk>/', views.CreateReviewView.as_view(), name='post-review'),
+    path('contact-message/', views.ContactMessageView.as_view(), name='contact-message'),
 ]
