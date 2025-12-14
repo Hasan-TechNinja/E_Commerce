@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'authentication',
     'shop',
+    'rest_framework_simplejwt.token_blacklist',
 ]
 
 MIDDLEWARE = [
@@ -135,15 +136,36 @@ EMAIL_HOST_USER = config("EMAIL_USER")
 EMAIL_HOST_PASSWORD = config("EMAIL_PASS")
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
+PAYPAL_CLIENT_ID = config('PAYPAL_CLIENT_ID', default='test_client_id')
+PAYPAL_SECRET = config('PAYPAL_SECRET', default='test_secret')
+PAYPAL_API_BASE = config('PAYPAL_API_BASE', default='https://api-m.sandbox.paypal.com')
+PAYPAL_RETURN_URL = config('PAYPAL_RETURN_URL', default='http://localhost:3000/checkout/success')
+PAYPAL_CANCEL_URL = config('PAYPAL_CANCEL_URL', default='http://localhost:3000/checkout/cancel')
+
 
 REST_FRAMEWORK = {
 
     'DEFAULT_AUTHENTICATION_CLASSES': (
-
         'rest_framework_simplejwt.authentication.JWTAuthentication',
-    )
+    ),
 
+    # 'DEFAULT_PERMISSION_CLASSES': (
+    #     'rest_framework.permissions.IsAuthenticated',
+    # ),
+
+    'DEFAULT_THROTTLE_CLASSES': (
+        'rest_framework.throttling.UserRateThrottle',
+        'rest_framework.throttling.AnonRateThrottle',
+    ),
+    'DEFAULT_THROTTLE_RATES': {
+        'user': '10/day', 
+        'anon': '10/hour', 
+    },
+
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.LimitOffsetPagination',
+    'PAGE_SIZE': 20, 
 }
+
 
 
 SIMPLE_JWT = {
