@@ -121,34 +121,53 @@ class LoginView(APIView):
         email = request.data.get("email")
         password = request.data.get("password")
 
-        if not email or not password: 
-            return Response({"error": "Email and password required!"}, status=status.HTTP_400_BAD_REQUEST)
-        
+        if not email or not password:
+            return Response(
+                {"error": "Email and password required!"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         user = User.objects.filter(email=email).first()
 
-        if user and user.check_password(password):
-            if not user.is_active:
-                return Response({'error': 'Please verify your email first.'}, status=status.HTTP_403_FORBIDDEN)
-            
-            # If active, authenticate properly to ensure all checks pass and get backend
-            user = authenticate(username=email, password=password)
-        else:
-            # User not found or password incorrect
-            return Response({'error': 'Invalid credentials.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not user or not user.check_password(password):
+            return Response(
+                {"error": "Invalid credentials."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
+        if not user.is_active:
+            return Response(
+                {"error": "Please verify your email first."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # authenticate to respect auth backends
+        user = authenticate(username=user.username, password=password)
         if user is None:
-            # This might happen if there's another reason authentication fails (e.g. custom backend logic)
-            return Response({'error': 'Invalid credentials.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "Invalid credentials."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # ✅ safe profile handling
+        profile = Profile.objects.filter(user=user).first()
 
         refresh = RefreshToken.for_user(user)
-        access = refresh.access_token
 
+        data = {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "image": profile.image.url if profile and profile.image else None,
+        }
 
         return Response({
-            'message': 'Login successful.',
-            'access': str(access),
-            'refresh': str(refresh),
-            
+            "message": "Login successful.",
+            "access": str(refresh.access_token),
+            "refresh": str(refresh),
+            "data": data
         }, status=status.HTTP_200_OK)
         
 
