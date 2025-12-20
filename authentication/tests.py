@@ -174,3 +174,58 @@ class SocialLoginTest(TestCase):
         response = self.client.post(self.url, {})
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data['error'], 'Email is required!')
+
+
+class ChangePasswordTest(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.url = reverse('change-password')
+        self.user = User.objects.create_user(
+            username='testuser@example.com',
+            email='testuser@example.com',
+            password='oldpassword123'
+        )
+        self.client.force_authenticate(user=self.user)
+
+    def test_change_password_success(self):
+        data = {
+            'old_password': 'oldpassword123',
+            'new_password': 'newpassword123',
+            'confirm_password': 'newpassword123'
+        }
+        response = self.client.post(self.url, data)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['message'], 'Password changed successfully.')
+        
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password('newpassword123'))
+
+    def test_change_password_incorrect_old_password(self):
+        data = {
+            'old_password': 'wrongpassword',
+            'new_password': 'newpassword123',
+            'confirm_password': 'newpassword123'
+        }
+        response = self.client.post(self.url, data)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['error'], 'Incorrect old password.')
+
+    def test_change_password_mismatch(self):
+        data = {
+            'old_password': 'oldpassword123',
+            'new_password': 'newpassword123',
+            'confirm_password': 'mismatchpassword'
+        }
+        response = self.client.post(self.url, data)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['new_password'][0], 'Passwords do not match')
+
+    def test_change_password_unauthenticated(self):
+        self.client.logout()
+        data = {
+            'old_password': 'oldpassword123',
+            'new_password': 'newpassword123',
+            'confirm_password': 'newpassword123'
+        }
+        response = self.client.post(self.url, data)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)

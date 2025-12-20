@@ -10,5 +10,6 @@ urlpatterns = [
     path('verify-pass-code/', views.VerifyPasswordResetCodeView.as_view(), name='verify-pass-code'),
     path('set-new-password/', views.SetNewPasswordView.as_view(), name='set-new-password'),
     path('social-login/', views.SocialLogin.as_view(), name='social-login'),
+    path('change-password/', views.ChangePasswordView.as_view(), name='change-password'),
     path('logout/', views.LogoutView.as_view(), name='logout'),
 ]
