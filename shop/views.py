@@ -11,23 +11,13 @@ import decimal
 from django.db.models import Avg
 from django.db import transaction
 from django.core.mail import send_mail
+import stripe
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
 
-# PayPal Config
-PAYPAL_CLIENT_ID = settings.PAYPAL_CLIENT_ID
-PAYPAL_SECRET = settings.PAYPAL_SECRET
-PAYPAL_API_BASE = settings.PAYPAL_API_BASE
+stripe.api_key = settings.STRIPE_SECRET_KEY
 
-def get_paypal_access_token():
-    url = f"{PAYPAL_API_BASE}/v1/oauth2/token"
-    headers = {
-        "Accept": "application/json",
-        "Accept-Language": "en_US",
-    }
-    data = {"grant_type": "client_credentials"}
-    auth = (PAYPAL_CLIENT_ID, PAYPAL_SECRET)
-    response = requests.post(url, headers=headers, data=data, auth=auth)
-    response.raise_for_status()
-    return response.json()["access_token"]
+
 
 
 class HealthProductListView(APIView):
@@ -101,7 +91,17 @@ class CartView(APIView):
     def get(self, request):
         cart_items = CartItem.objects.filter(user=request.user)
         serializer = CartItemSerializer(cart_items, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        
+        subtotal = sum(item.product.discounted_price * item.quantity for item in cart_items)
+        shipping_fee = decimal.Decimal('50.00') # Fixed shipping fee
+        total = subtotal + shipping_fee
+
+        return Response({
+            'items': serializer.data,
+            'subtotal': subtotal,
+            'shipping_fee': shipping_fee,
+            'total': total
+        }, status=status.HTTP_200_OK)
     
     def delete(self, request):
         CartItem.objects.filter(user=request.user).delete()
@@ -209,94 +209,110 @@ class CheckoutView(APIView):
                         quantity=item.quantity
                     )
                 
-                # Create PayPal Order
-                access_token = get_paypal_access_token()
-                headers = {
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {access_token}",
-                }
+                # Create Stripe Checkout Session
+                is_subscription = request.data.get('is_subscription', False)
                 
-                payload = {
-                    "intent": "CAPTURE",
-                    "purchase_units": [
-                        {
-                            "amount": {
-                                "currency_code": "USD",
-                                "value": str(total_price + shipping_fee),
+                line_items = []
+                for item in cart_items:
+                    if is_subscription:
+                        if not item.product.stripe_price_id:
+                            raise Exception(f"Product {item.product.name} does not have a subscription price.")
+                        line_items.append({
+                            'price': item.product.stripe_price_id,
+                            'quantity': item.quantity,
+                        })
+                    else:
+                        line_items.append({
+                            'price_data': {
+                                'currency': 'usd',
+                                'product_data': {
+                                    'name': item.product.name,
+                                },
+                                'unit_amount': int(item.product.discounted_price * 100),
                             },
-                            "reference_id": str(order.id) # Link to our order
-                        }
-                    ],
-                    "application_context": {
-                        "return_url": settings.PAYPAL_RETURN_URL, 
-                        "cancel_url": settings.PAYPAL_CANCEL_URL
+                            'quantity': item.quantity,
+                        })
+                
+                # Add shipping fee
+                if not is_subscription:
+                     line_items.append({
+                        'price_data': {
+                            'currency': 'usd',
+                            'product_data': {
+                                'name': 'Shipping Fee',
+                            },
+                            'unit_amount': int(shipping_fee * 100),
+                        },
+                        'quantity': 1,
+                    })
+
+                mode = 'subscription' if is_subscription else 'payment'
+                
+                checkout_session = stripe.checkout.Session.create(
+                    payment_method_types=['card'],
+                    line_items=line_items,
+                    mode=mode,
+                    success_url=settings.CORS_ALLOWED_ORIGINS[6] + '/checkout/success?session_id={CHECKOUT_SESSION_ID}',
+                    cancel_url=settings.CORS_ALLOWED_ORIGINS[6] + '/checkout/cancel',
+                    client_reference_id=str(order.id),
+                    customer_email=request.user.email,
+                    metadata={
+                        'order_id': order.id
                     }
-                }
+                )
                 
-                response = requests.post(f"{PAYPAL_API_BASE}/v2/checkout/orders", headers=headers, json=payload)
-                response.raise_for_status()
-                paypal_data = response.json()
-                
-                order.paypal_order_id = paypal_data['id']
+                order.stripe_checkout_session_id = checkout_session.id
                 order.save()
 
                 # Clear Cart
                 cart_items.delete()
 
                 serializer = OrderSerializer(order)
-                # Return approval link if needed, or just ID
-                approval_link = next((link['href'] for link in paypal_data['links'] if link['rel'] == 'approve'), None)
                 
                 return Response({
                     'order': serializer.data, 
-                    'paypal_order_id': paypal_data['id'],
-                    'approval_link': approval_link
+                    'checkout_url': checkout_session.url
                 }, status=status.HTTP_201_CREATED)
 
-        except requests.exceptions.RequestException as e:
-            return Response({"error": f"PayPal Error: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-class PayPalCaptureView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+@method_decorator(csrf_exempt, name='dispatch')
+class StripeWebhookView(APIView):
+    permission_classes = [permissions.AllowAny]
 
     def post(self, request):
-        paypal_order_id = request.data.get('paypal_order_id')
-        if not paypal_order_id:
-            return Response({"error": "paypal_order_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+        payload = request.body
+        sig_header = request.META.get('HTTP_STRIPE_SIGNATURE')
+        event = None
 
         try:
-            # Verify order exists in our DB
-            order = Order.objects.get(paypal_order_id=paypal_order_id, user=request.user)
-            
-            if order.is_paid:
-                 return Response({"message": "Order already paid"}, status=status.HTTP_200_OK)
+            event = stripe.Webhook.construct_event(
+                payload, sig_header, settings.STRIPE_WEBHOOK_SECRET
+            )
+        except ValueError as e:
+            return Response(status=status.HTTP_400_BAD_REQUEST)
+        except stripe.error.SignatureVerificationError as e:
+            return Response(status=status.HTTP_400_BAD_REQUEST)
 
-            # Capture Payment
-            access_token = get_paypal_access_token()
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {access_token}",
-            }
+        if event['type'] == 'checkout.session.completed':
+            session = event['data']['object']
+            order_id = session.get('client_reference_id')
             
-            response = requests.post(f"{PAYPAL_API_BASE}/v2/checkout/orders/{paypal_order_id}/capture", headers=headers)
-            response.raise_for_status()
-            capture_data = response.json()
-            
-            if capture_data['status'] == 'COMPLETED':
-                order.is_paid = True
-                order.status = 'Processing'
-                order.save()
-                return Response({"message": "Payment successful", "status": capture_data['status']}, status=status.HTTP_200_OK)
-            else:
-                 return Response({"error": "Payment not completed", "details": capture_data}, status=status.HTTP_400_BAD_REQUEST)
+            if order_id:
+                try:
+                    order = Order.objects.get(id=order_id)
+                    order.is_paid = True
+                    order.status = 'Processing'
+                    order.save()
+                except Order.DoesNotExist:
+                    pass
+        
+        return Response(status=status.HTTP_200_OK)
 
-        except Order.DoesNotExist:
-            return Response({"error": "Order not found"}, status=status.HTTP_404_NOT_FOUND)
-        except requests.exceptions.RequestException as e:
-             return Response({"error": f"PayPal Capture Error: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+
+
 
 
 

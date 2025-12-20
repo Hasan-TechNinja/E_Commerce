@@ -166,11 +166,11 @@ EMAIL_HOST_PASSWORD = config("EMAIL_PASS")
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 ADMIN_EMAIL = config("ADMIN_EMAIL")
 
-PAYPAL_CLIENT_ID = config('PAYPAL_CLIENT_ID', default='test_client_id')
-PAYPAL_SECRET = config('PAYPAL_SECRET', default='test_secret')
-PAYPAL_API_BASE = config('PAYPAL_API_BASE', default='https://api-m.sandbox.paypal.com')
-PAYPAL_RETURN_URL = config('PAYPAL_RETURN_URL', default='http://localhost:3000/checkout/success')
-PAYPAL_CANCEL_URL = config('PAYPAL_CANCEL_URL', default='http://localhost:3000/checkout/cancel')
+STRIPE_PUBLIC_KEY = config('STRIPE_PUBLIC_KEY', default='pk_test_...')
+STRIPE_SECRET_KEY = config('STRIPE_SECRET_KEY', default='sk_test_...')
+STRIPE_WEBHOOK_SECRET = config('STRIPE_WEBHOOK_SECRET', default='whsec_...')
+
+
 
 
 REST_FRAMEWORK = {

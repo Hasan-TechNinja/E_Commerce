@@ -7,6 +7,8 @@ from .models import Product, CartItem, Order, Type
 from unittest.mock import patch
 import requests
 import unittest
+from unittest.mock import patch, MagicMock
+
 
 class CheckoutViewTests(TestCase):
     def setUp(self):
@@ -41,22 +43,13 @@ class CheckoutViewTests(TestCase):
         # Verify order was deleted/not created
         self.assertEqual(Order.objects.count(), 0)
 
-    @patch('shop.views.requests.post')
-    def test_checkout_success(self, mock_post):
-        # Mock Access Token Response
-        mock_token_response = unittest.mock.Mock()
-        mock_token_response.json.return_value = {'access_token': 'test_token'}
-        mock_token_response.status_code = 200
-        
-        # Mock Create Order Response
-        mock_order_response = unittest.mock.Mock()
-        mock_order_response.json.return_value = {
-            'id': 'paypal_order_123',
-            'links': [{'href': 'http://approval.link', 'rel': 'approve'}]
-        }
-        mock_order_response.status_code = 201
-        
-        mock_post.side_effect = [mock_token_response, mock_order_response]
+    @patch('shop.views.stripe.checkout.Session.create')
+    def test_checkout_success(self, mock_stripe_create):
+        # Mock Stripe Session
+        mock_session = MagicMock()
+        mock_session.id = 'cs_test_123'
+        mock_session.url = 'https://checkout.stripe.com/pay/cs_test_123'
+        mock_stripe_create.return_value = mock_session
 
         CartItem.objects.create(user=self.user, product=self.product, quantity=2)
         
@@ -70,27 +63,27 @@ class CheckoutViewTests(TestCase):
         }
         
         response = self.client.post(self.url, data, format='json')
-        if response.status_code != status.HTTP_201_CREATED:
-            print(f"DEBUG: {response.data}")
         
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(Order.objects.count(), 1)
         order = Order.objects.first()
         self.assertEqual(order.total_price, 180.00) # 90 * 2
         self.assertEqual(order.shipping_fee, 50.00)
-        self.assertEqual(order.paypal_order_id, 'paypal_order_123')
+        self.assertEqual(order.stripe_checkout_session_id, 'cs_test_123')
         self.assertEqual(CartItem.objects.count(), 0)
-        self.assertIn('approval_link', response.data)
+        self.assertEqual(response.data['checkout_url'], 'https://checkout.stripe.com/pay/cs_test_123')
 
-    @patch('shop.views.requests.post')
-    def test_checkout_paypal_error(self, mock_post):
-        # Mock Access Token Response
-        mock_token_response = unittest.mock.Mock()
-        mock_token_response.json.return_value = {'access_token': 'test_token'}
-        mock_token_response.status_code = 200
-        
-        # Mock Create Order Error
-        mock_post.side_effect = [mock_token_response, requests.exceptions.RequestException("PayPal Error")]
+    @patch('shop.views.stripe.checkout.Session.create')
+    def test_checkout_subscription_success(self, mock_stripe_create):
+        # Mock Stripe Session
+        mock_session = MagicMock()
+        mock_session.id = 'cs_test_sub_123'
+        mock_session.url = 'https://checkout.stripe.com/pay/cs_test_sub_123'
+        mock_stripe_create.return_value = mock_session
+
+        # Set stripe_price_id for product
+        self.product.stripe_price_id = 'price_123'
+        self.product.save()
 
         CartItem.objects.create(user=self.user, product=self.product, quantity=1)
         
@@ -100,13 +93,58 @@ class CheckoutViewTests(TestCase):
                 'phone': '1234567890',
                 'address': '123 Test St',
                 'type': 'home'
-            }
+            },
+            'is_subscription': True
         }
         
         response = self.client.post(self.url, data, format='json')
         
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(Order.objects.count(), 0)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        mock_stripe_create.assert_called_with(
+            payment_method_types=['card'],
+            line_items=[{'price': 'price_123', 'quantity': 1}],
+            mode='subscription',
+            success_url=unittest.mock.ANY,
+            cancel_url=unittest.mock.ANY,
+            client_reference_id=unittest.mock.ANY,
+            customer_email=self.user.email,
+            metadata={'order_id': unittest.mock.ANY}
+        )
+
+    @patch('shop.views.stripe.Webhook.construct_event')
+    def test_stripe_webhook_success(self, mock_construct_event):
+        # Create Order
+        order = Order.objects.create(
+            user=self.user,
+            total_price=100.00,
+            shipping_fee=50.00,
+            status='Pending',
+            is_paid=False,
+            stripe_checkout_session_id='cs_test_123'
+        )
+
+        mock_event = {
+            'type': 'checkout.session.completed',
+            'data': {
+                'object': {
+                    'client_reference_id': str(order.id)
+                }
+            }
+        }
+        mock_construct_event.return_value = mock_event
+
+        url = reverse('stripe-webhook')
+        data = {'some': 'payload'} # Payload doesn't matter as we mock construct_event
+        
+        # Set HTTP_STRIPE_SIGNATURE header
+        response = self.client.post(url, data, format='json', HTTP_STRIPE_SIGNATURE='test_sig')
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        order.refresh_from_db()
+        self.assertTrue(order.is_paid)
+        self.assertEqual(order.status, 'Processing')
+
+
 
     @patch('shop.views.requests.post')
     def test_checkout_incomplete_address(self, mock_post):
@@ -142,39 +180,7 @@ class CheckoutViewTests(TestCase):
         except AttributeError:
             self.fail("AttributeError raised when address is a string")
 
-    @patch('shop.views.requests.post')
-    def test_paypal_capture_success(self, mock_post):
-        # Create Order
-        order = Order.objects.create(
-            user=self.user,
-            total_price=100.00,
-            shipping_fee=50.00,
-            status='Pending',
-            is_paid=False,
-            paypal_order_id='paypal_order_123'
-        )
-        
-        # Mock Access Token Response
-        mock_token_response = unittest.mock.Mock()
-        mock_token_response.json.return_value = {'access_token': 'test_token'}
-        mock_token_response.status_code = 200
 
-        # Mock Capture Response
-        mock_capture_response = unittest.mock.Mock()
-        mock_capture_response.json.return_value = {'status': 'COMPLETED'}
-        mock_capture_response.status_code = 200
-        
-        mock_post.side_effect = [mock_token_response, mock_capture_response]
-        
-        url = reverse('paypal-capture')
-        data = {'paypal_order_id': 'paypal_order_123'}
-        
-        response = self.client.post(url, data, format='json')
-        
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        order.refresh_from_db()
-        self.assertTrue(order.is_paid)
-        self.assertEqual(order.status, 'Processing')
 
 
 

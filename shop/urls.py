@@ -12,7 +12,8 @@ urlpatterns = [
     path('cart/items/increase/<int:pk>/', views.IncreaseCartItemQuantityView.as_view(), name='increase-cart-item'),
     path('cart/items/decrease/<int:pk>/', views.DecreaseCartItemQuantityView.as_view(), name='decrease-cart-item'),
     path('checkout/', views.CheckoutView.as_view(), name='checkout'),
-    path('paypal/capture/', views.PayPalCaptureView.as_view(), name='paypal-capture'),
+    path('stripe/webhook/', views.StripeWebhookView.as_view(), name='stripe-webhook'),
+
     path('orders/', views.OrderListView.as_view(), name='order-list'),
     path('orders/<int:pk>/', views.OrderDetailView.as_view(), name='order-detail'),
     path('post/review/<int:pk>/', views.CreateReviewView.as_view(), name='post-review'),
