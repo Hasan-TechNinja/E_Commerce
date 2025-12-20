@@ -18,4 +18,5 @@ urlpatterns = [
     path('post/review/<int:pk>/', views.CreateReviewView.as_view(), name='post-review'),
     path('contact-message/', views.ContactMessageView.as_view(), name='contact-message'),
     path('filter/product/', views.TypeFilterView.as_view(), name='filter-products'),
+    path('products/<int:pk>/reviews/stats/', views.ProductReviewStatsView.as_view(), name='product-review-stats'),
 ]

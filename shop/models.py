@@ -35,6 +35,7 @@ class Product(models.Model):
     description = models.TextField(max_length=10000)
     size = models.CharField(choices=PRODUCT_SIZE_CHOICES, max_length=2)
     logo = models.ImageField(upload_to='products/')
+    certificate = models.FileField(upload_to='certificate/', blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     order_count = models.IntegerField(default=0)
 

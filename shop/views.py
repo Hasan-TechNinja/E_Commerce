@@ -8,6 +8,7 @@ from django.conf import settings
 import requests
 import base64
 import decimal
+from django.db.models import Avg
 from django.db import transaction
 from django.core.mail import send_mail
 
@@ -433,3 +434,56 @@ class TypeFilterView(APIView):
 
         serializer = ProductSerializer(products, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class ProductReviewStatsView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, pk):
+        try:
+            product = Product.objects.get(pk=pk)
+        except Product.DoesNotExist:
+            return Response({"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        reviews = Review.objects.filter(product=product)
+        total_reviews = reviews.count()
+
+        if total_reviews == 0:
+            return Response({
+                "total_reviews": 0,
+                "average_rating": 0,
+                "star_counts": {
+                    "1_star": 0,
+                    "2_star": 0,
+                    "3_star": 0,
+                    "4_star": 0,
+                    "5_star": 0
+                },
+                "recommended_percentage": 0
+            }, status=status.HTTP_200_OK)
+
+        star_counts = {
+            "1_star": reviews.filter(rating=1).count(),
+            "2_star": reviews.filter(rating=2).count(),
+            "3_star": reviews.filter(rating=3).count(),
+            "4_star": reviews.filter(rating=4).count(),
+            "5_star": reviews.filter(rating=5).count(),
+        }
+
+        average_rating = reviews.aggregate(Avg('rating'))['rating__avg']
+        # Round to 1 decimal place
+        average_rating = round(average_rating, 1) if average_rating else 0
+
+        # Assuming recommended means rating >= 4
+        recommended_count = reviews.filter(rating__gte=4).count()
+        recommended_percentage = (recommended_count / total_reviews) * 100 if total_reviews > 0 else 0
+        recommended_percentage = round(recommended_percentage, 1)
+
+        data = {
+            "total_reviews": total_reviews,
+            "average_rating": average_rating,
+            "star_counts": star_counts,
+            "recommended_percentage": recommended_percentage
+        }
+
+        return Response(data, status=status.HTTP_200_OK)
