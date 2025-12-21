@@ -110,7 +110,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def run_ai(self, message: str) -> str:
-        return get_ai_reply(message)
+        return get_ai_reply(message, user=self.user)
 
     # -----------------------------
     # Database helpers
