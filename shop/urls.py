@@ -22,4 +22,7 @@ urlpatterns = [
     path('products/<int:pk>/reviews/stats/', views.ProductReviewStatsView.as_view(), name='product-review-stats'),
     path('orders/<int:pk>/cancel/', views.CancelOrderView.as_view(), name='cancel-order'),
     path('orders/<int:pk>/confirm-delivery/', views.ConfirmDeliveryView.as_view(), name='confirm-delivery'),
+    path('recurring/product/', views.UserSubscriptionListView.as_view(), name='subscription-list'),
+    path('recurring/<int:pk>/update/', views.UserSubscriptionUpdateView.as_view(), name='subscription-update'),
+    path('recurring/<int:pk>/cancel/', views.UserSubscriptionDeleteView.as_view(), name='subscription-cancel'),
 ]

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from . models import Type, Product, ProductImage, Review, CartItem, Order, OrderItem, OrderAddress, ContactMessage
+from . models import Type, Product, ProductImage, Review, CartItem, Order, OrderItem, OrderAddress, ContactMessage, UserSubscription
 
 
 class TypeSerializer(serializers.ModelSerializer):
@@ -60,4 +60,10 @@ class OrderSerializer(serializers.ModelSerializer):
 class ContactMessageSerializer(serializers.ModelSerializer):
     class Meta:
         model = ContactMessage
+        fields = '__all__'
+
+
+class UserSubscriptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserSubscription
         fields = '__all__'

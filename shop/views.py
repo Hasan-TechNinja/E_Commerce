@@ -1,6 +1,7 @@
 from django.shortcuts import render
-from . models import CartItem, ContactMessage, Product, Review, Order, OrderItem, OrderAddress, Type
-from . serializers import CartItemSerializer, ProductSerializer, ReviewSerializer, OrderSerializer, TypeSerializer
+from . models import CartItem, ContactMessage, Product, Review, Order, OrderItem, OrderAddress, Type, UserSubscription
+from django.contrib.auth.models import User
+from . serializers import CartItemSerializer, ProductSerializer, ReviewSerializer, OrderSerializer, TypeSerializer, UserSubscriptionSerializer
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, permissions
@@ -273,6 +274,7 @@ class CheckoutView(APIView):
                     line_items=line_items,
                     mode=mode,
                     success_url=frontend_url + '/checkout/success?session_id={CHECKOUT_SESSION_ID}',
+                    # success_url='/order-history',
                     cancel_url=frontend_url + '/checkout/cancel',
                     client_reference_id=str(order.id),
                     customer_email=request.user.email,
@@ -328,6 +330,33 @@ class StripeWebhookView(APIView):
                     order.save()
                 except Order.DoesNotExist:
                     pass
+
+            # Handle Subscription Creation
+            if session.get('mode') == 'subscription':
+                subscription_id = session.get('subscription')
+                user_email = session.get('customer_email')
+                
+                try:
+                    user = User.objects.get(email=user_email)
+                    # Retrieve subscription details from Stripe to get items
+                    stripe_subscription = stripe.Subscription.retrieve(subscription_id)
+                    
+                    for item in stripe_subscription['items']['data']:
+                        price_id = item['price']['id']
+                        # Find product by price_id
+                        product = Product.objects.filter(stripe_subscription_price_id=price_id).first()
+                        
+                        if product:
+                            UserSubscription.objects.create(
+                                user=user,
+                                product=product,
+                                stripe_subscription_id=subscription_id,
+                                stripe_subscription_item_id=item['id'],
+                                quantity=item['quantity'],
+                                status='Active'
+                            )
+                except Exception as e:
+                    print(f"Error processing subscription webhook: {e}")
         
         return Response(status=status.HTTP_200_OK)
 
@@ -560,3 +589,75 @@ class ConfirmDeliveryView(APIView):
         order.status = 'Delivered'
         order.save()
         return Response({"message": "Order delivery confirmed"}, status=status.HTTP_200_OK)
+
+
+class UserSubscriptionListView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        subscriptions = UserSubscription.objects.filter(user=request.user, status='Active')
+        serializer = UserSubscriptionSerializer(subscriptions, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class UserSubscriptionUpdateView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def patch(self, request, pk):
+        try:
+            subscription = UserSubscription.objects.get(pk=pk, user=request.user)
+        except UserSubscription.DoesNotExist:
+            return Response({"error": "Subscription not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        action = request.data.get("action")  # expected: "increment" or "decrement"
+        if action not in ["increment", "decrement"]:
+            return Response({"error": "Invalid action"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Calculate new quantity
+        new_quantity = subscription.quantity + 1 if action == "increment" else subscription.quantity - 1
+        if new_quantity < 1:
+            return Response({"error": "Quantity cannot be less than 1"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # Update Stripe subscription item
+            if subscription.stripe_subscription_item_id:
+                stripe.SubscriptionItem.modify(
+                    subscription.stripe_subscription_item_id,
+                    quantity=new_quantity
+                )
+
+            subscription.quantity = new_quantity
+            subscription.save()
+
+            return Response(
+                {"message": "Recurring updated successfully", "quantity": new_quantity},
+                status=status.HTTP_200_OK
+            )
+
+        except stripe.error.StripeError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+class UserSubscriptionDeleteView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def delete(self, request, pk):
+        try:
+            subscription = UserSubscription.objects.get(pk=pk, user=request.user)
+        except UserSubscription.DoesNotExist:
+            return Response({"error": "Subscription not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            # Cancel Stripe Subscription Item
+            if subscription.stripe_subscription_item_id:
+                stripe.SubscriptionItem.delete(subscription.stripe_subscription_item_id)
+
+            subscription.status = 'Cancelled'
+            subscription.save()
+            # Optionally delete the record
+            subscription.delete() 
+            
+            return Response({"message": "Subscription cancelled successfully"}, status=status.HTTP_200_OK)
+        except stripe.error.StripeError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)

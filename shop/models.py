@@ -128,3 +128,16 @@ class ContactMessage(models.Model):
 
     def __str__(self):
         return f"Message from {self.name} - {self.project_details[:30]}..."
+
+
+class UserSubscription(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='subscriptions')
+    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    stripe_subscription_id = models.CharField(max_length=255)
+    stripe_subscription_item_id = models.CharField(max_length=255, blank=True, null=True)
+    quantity = models.IntegerField(default=1)
+    status = models.CharField(max_length=50, default='Active')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.user.username} - {self.product.name} ({self.status})"
