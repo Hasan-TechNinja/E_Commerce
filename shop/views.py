@@ -14,6 +14,7 @@ from django.core.mail import send_mail
 import stripe
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
+from django.utils import timezone
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
 
@@ -522,3 +523,40 @@ class ProductReviewStatsView(APIView):
         }
 
         return Response(data, status=status.HTTP_200_OK)
+
+
+
+class CancelOrderView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        try:
+            order = Order.objects.get(pk=pk, user=request.user)
+        except Order.DoesNotExist:
+            return Response({"error": "Order not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Check if order was created more than 48 hours ago
+        time_difference = timezone.now() - order.created_at
+        if time_difference.total_seconds() > 48 * 3600:
+             return Response({"error": "Cannot cancel order after 48 hours"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if order.status in ['Pending', 'Processing']:
+            order.status = 'Cancelled'
+            order.save()
+            return Response({"message": "Order cancelled successfully"}, status=status.HTTP_200_OK)
+        else:
+            return Response({"error": "Cannot cancel order in current status"}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ConfirmDeliveryView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        try:
+            order = Order.objects.get(pk=pk, user=request.user)
+        except Order.DoesNotExist:
+            return Response({"error": "Order not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        order.status = 'Delivered'
+        order.save()
+        return Response({"message": "Order delivery confirmed"}, status=status.HTTP_200_OK)

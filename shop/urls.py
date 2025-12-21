@@ -20,4 +20,6 @@ urlpatterns = [
     path('contact-message/', views.ContactMessageView.as_view(), name='contact-message'),
     path('filter/product/', views.TypeFilterView.as_view(), name='filter-products'),
     path('products/<int:pk>/reviews/stats/', views.ProductReviewStatsView.as_view(), name='product-review-stats'),
+    path('orders/<int:pk>/cancel/', views.CancelOrderView.as_view(), name='cancel-order'),
+    path('orders/<int:pk>/confirm-delivery/', views.ConfirmDeliveryView.as_view(), name='confirm-delivery'),
 ]
