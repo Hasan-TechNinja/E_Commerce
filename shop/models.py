@@ -38,7 +38,8 @@ class Product(models.Model):
     certificate = models.FileField(upload_to='certificate/', blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     order_count = models.IntegerField(default=0)
-    stripe_price_id = models.CharField(max_length=100, blank=True, null=True)
+    stripe_one_time_price_id = models.CharField(max_length=100, blank=True, null=True)
+    stripe_subscription_price_id = models.CharField(max_length=100, blank=True, null=True)
 
     def __str__(self):
         return self.name

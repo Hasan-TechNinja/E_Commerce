@@ -162,27 +162,28 @@ class CheckoutView(APIView):
         if not cart_items.exists():
             return Response({"error": "Cart is empty"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Validate Address Data First
+        # ✅ Validate Address Data
         address_data = request.data.get('address')
         if not address_data:
-             return Response({"error": "Address data is required"}, status=status.HTTP_400_BAD_REQUEST)
-        
+            return Response({"error": "Address data is required"}, status=status.HTTP_400_BAD_REQUEST)
+
         if not isinstance(address_data, dict):
             return Response({"error": "Address data must be a dictionary"}, status=status.HTTP_400_BAD_REQUEST)
 
-        
         required_fields = ['name', 'phone', 'address', 'type']
         missing_fields = [field for field in required_fields if not address_data.get(field)]
         if missing_fields:
             return Response({"error": f"Missing address fields: {', '.join(missing_fields)}"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Calculate totals
+        # ✅ Calculate totals
         total_price = sum(item.product.discounted_price * item.quantity for item in cart_items)
-        shipping_fee = decimal.Decimal('50.00') # Fixed shipping fee for now, can be dynamic
-        
+        shipping_fee = decimal.Decimal('50.00')  # Flat shipping fee (can be made dynamic)
+
+        is_subscription = request.data.get('is_subscription', False)
+
         try:
             with transaction.atomic():
-                # Create Order
+                # ✅ Create Order
                 order = Order.objects.create(
                     user=request.user,
                     total_price=total_price,
@@ -191,7 +192,7 @@ class CheckoutView(APIView):
                     is_paid=False
                 )
 
-                # Create Order Address
+                # ✅ Create Order Address
                 OrderAddress.objects.create(
                     order=order,
                     name=address_data.get('name'),
@@ -200,7 +201,7 @@ class CheckoutView(APIView):
                     type=address_data.get('type')
                 )
 
-                # Create Order Items
+                # ✅ Create Order Items
                 for item in cart_items:
                     OrderItem.objects.create(
                         order=order,
@@ -208,20 +209,26 @@ class CheckoutView(APIView):
                         price=item.product.discounted_price,
                         quantity=item.quantity
                     )
-                
-                # Create Stripe Checkout Session
-                is_subscription = request.data.get('is_subscription', False)
-                
+
+                # ✅ Prepare Stripe Checkout line items
                 line_items = []
+                mode = 'subscription' if is_subscription else 'payment'
+
                 for item in cart_items:
+                    # Get appropriate price_id based on payment mode
                     if is_subscription:
-                        if not item.product.stripe_price_id:
-                            raise Exception(f"Product {item.product.name} does not have a subscription price.")
+                        price_id = getattr(item.product, 'stripe_subscription_price_id', None)
+                    else:
+                        price_id = getattr(item.product, 'stripe_one_time_price_id', None)
+
+                    if price_id:
+                        # Use Stripe predefined price
                         line_items.append({
-                            'price': item.product.stripe_price_id,
+                            'price': price_id,
                             'quantity': item.quantity,
                         })
                     else:
+                        # Fallback to dynamic price
                         line_items.append({
                             'price_data': {
                                 'currency': 'usd',
@@ -232,10 +239,10 @@ class CheckoutView(APIView):
                             },
                             'quantity': item.quantity,
                         })
-                
-                # Add shipping fee
-                if not is_subscription:
-                     line_items.append({
+
+                # ✅ Add shipping fee only for one-time payments
+                if mode == 'payment':
+                    line_items.append({
                         'price_data': {
                             'currency': 'usd',
                             'product_data': {
@@ -245,32 +252,44 @@ class CheckoutView(APIView):
                         },
                         'quantity': 1,
                     })
+        
+                # # ✅ Create Stripe Checkout Session
+                # checkout_session = stripe.checkout.Session.create(
+                #     payment_method_types=['card'],
+                #     line_items=line_items,
+                #     mode=mode,
+                #     success_url=settings.CORS_ALLOWED_ORIGINS[6] + '/checkout/success?session_id={CHECKOUT_SESSION_ID}',
+                #     cancel_url=settings.CORS_ALLOWED_ORIGINS[6] + '/checkout/cancel',
+                #     client_reference_id=str(order.id),
+                #     customer_email=request.user.email,
+                #     metadata={'order_id': order.id}
+                # )
 
-                mode = 'subscription' if is_subscription else 'payment'
-                
+                frontend_url = settings.CORS_ALLOWED_ORIGINS[0]  # take the first allowed origin
+
                 checkout_session = stripe.checkout.Session.create(
                     payment_method_types=['card'],
                     line_items=line_items,
                     mode=mode,
-                    success_url=settings.CORS_ALLOWED_ORIGINS[6] + '/checkout/success?session_id={CHECKOUT_SESSION_ID}',
-                    cancel_url=settings.CORS_ALLOWED_ORIGINS[6] + '/checkout/cancel',
+                    success_url=frontend_url + '/checkout/success?session_id={CHECKOUT_SESSION_ID}',
+                    cancel_url=frontend_url + '/checkout/cancel',
                     client_reference_id=str(order.id),
                     customer_email=request.user.email,
-                    metadata={
-                        'order_id': order.id
-                    }
+                    metadata={'order_id': order.id}
                 )
-                
+
+
+                # ✅ Save Stripe session info
                 order.stripe_checkout_session_id = checkout_session.id
                 order.save()
 
-                # Clear Cart
+                # ✅ Clear cart after creating session
                 cart_items.delete()
 
                 serializer = OrderSerializer(order)
-                
+
                 return Response({
-                    'order': serializer.data, 
+                    'order': serializer.data,
                     'checkout_url': checkout_session.url
                 }, status=status.HTTP_201_CREATED)
 

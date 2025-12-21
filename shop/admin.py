@@ -19,7 +19,7 @@ class TypeAdmin(admin.ModelAdmin):
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ('id', 'name', 'category', 'type', 'initial_price', 'discounted_price', 'size', 'order_count', 'stripe_price_id', 'created_at')
+    list_display = ('id', 'name', 'category', 'type', 'initial_price', 'discounted_price', 'size', 'order_count', 'stripe_one_time_price_id', 'stripe_subscription_price_id', 'created_at')
     list_filter = ('category', 'type', 'size', 'created_at')
     search_fields = ('name', 'description')
     readonly_fields = ('order_count',)
