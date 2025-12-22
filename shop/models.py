@@ -99,11 +99,15 @@ class Order(models.Model):
 
 class OrderItem(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
-    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, blank=True, null=True)
     price = models.DecimalField(max_digits=10, decimal_places=2)
     quantity = models.IntegerField(default=1)
+    is_free_item = models.BooleanField(default=False)
+    free_item_size = models.CharField(max_length=3, choices=[('S', 'S'), ('L', 'L'), ('M', 'M'), ('XL', 'XL'), ('XXL', 'XXL')], blank=True, null=True)
 
     def __str__(self):
+        if self.is_free_item:
+            return f"Free T-shirt ({self.free_item_size}) in Order {self.order.id}"
         return f"{self.quantity} x {self.product.name} in Order {self.order.id}"
 
 

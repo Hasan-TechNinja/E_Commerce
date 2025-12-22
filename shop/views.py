@@ -23,6 +23,8 @@ stripe.api_key = settings.STRIPE_SECRET_KEY
 
 
 class HealthProductListView(APIView):
+    permission_classes = [permissions.AllowAny]
+
     def get(self, request):
         product = Product.objects.filter(category ='Health')
         serializer = ProductSerializer(product, many=True)
@@ -30,6 +32,8 @@ class HealthProductListView(APIView):
 
 
 class MerchandiseProductView(APIView):
+    permission_classes = [permissions.AllowAny]
+
     def get(self, request):
         product = Product.objects.filter(category ='Merchandise')
         serializer = ProductSerializer(product, many=True)
@@ -37,6 +41,8 @@ class MerchandiseProductView(APIView):
 
 
 class ProductDetailView(APIView):
+    permission_classes = [permissions.AllowAny]
+    
     def get(self, request, pk):
         try: 
             product = Product.objects.get(pk=pk)
@@ -97,12 +103,16 @@ class CartView(APIView):
         subtotal = sum(item.product.discounted_price * item.quantity for item in cart_items)
         shipping_fee = decimal.Decimal('50.00') # Fixed shipping fee
         total = subtotal + shipping_fee
+        
+        # Check if eligible for free T-shirt (subtotal <= 1500)
+        eligible_for_free_tshirt = subtotal >= decimal.Decimal('1500.00') and cart_items.exists()
 
         return Response({
             'items': serializer.data,
             'subtotal': subtotal,
             'shipping_fee': shipping_fee,
-            'total': total
+            'total': total,
+            'eligible_for_free_tshirt': eligible_for_free_tshirt
         }, status=status.HTTP_200_OK)
     
     def delete(self, request):
@@ -181,6 +191,23 @@ class CheckoutView(APIView):
         total_price = sum(item.product.discounted_price * item.quantity for item in cart_items)
         shipping_fee = decimal.Decimal('50.00')  # Flat shipping fee (can be made dynamic)
 
+        # ✅ Check free T-shirt eligibility (subtotal <= 1500)
+        eligible_for_free_tshirt = total_price >= decimal.Decimal('1500.00')
+        free_tshirt_size = request.data.get('free_tshirt_size')
+        
+        # Validate free T-shirt size if eligible
+        if eligible_for_free_tshirt:
+            if not free_tshirt_size:
+                return Response({
+                    "error": "You are eligible for a free T-shirt! Please select your T-shirt size (S, L, M, XL, XXL)."
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            valid_sizes = ['S', 'L', 'M', 'XL', 'XXL']
+            if free_tshirt_size not in valid_sizes:
+                return Response({
+                    "error": f"Invalid T-shirt size. Please choose from: {', '.join(valid_sizes)}"
+                }, status=status.HTTP_400_BAD_REQUEST)
+
         is_subscription = request.data.get('is_subscription', False)
 
         try:
@@ -210,6 +237,17 @@ class CheckoutView(APIView):
                         product=item.product,
                         price=item.product.discounted_price,
                         quantity=item.quantity
+                    )
+                
+                # ✅ Create Free T-shirt item if eligible
+                if eligible_for_free_tshirt:
+                    OrderItem.objects.create(
+                        order=order,
+                        product=None,  # No product reference for free promotional item
+                        price=decimal.Decimal('0.00'),
+                        quantity=1,
+                        is_free_item=True,
+                        free_item_size=free_tshirt_size
                     )
 
                 # ✅ Prepare Stripe Checkout line items
