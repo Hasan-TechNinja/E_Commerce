@@ -391,14 +391,17 @@ class CreateReviewView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, pk):
+        # Check if product exists
         try:
             product = Product.objects.get(pk=pk)
         except Product.DoesNotExist:
             return Response({"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND)
 
+        # Get data
         rating = request.data.get('rating')
         comment = request.data.get('comment', '')
 
+        # Validate rating
         if rating is None:
             return Response({"error": "Rating is required"}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -407,8 +410,15 @@ class CreateReviewView(APIView):
             if rating < 0 or rating > 5:
                 raise ValueError
         except ValueError:
-            return Response({"error": "Rating must be an integer between 0 and 5"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Rating must be an integer between 0 and 5"},
+                            status=status.HTTP_400_BAD_REQUEST)
 
+        # Check if user already reviewed this product
+        if Review.objects.filter(user_name=request.user, product=product).exists():
+            return Response({"error": "You have already posted a review for this product."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # Create review
         review = Review.objects.create(
             product=product,
             user_name=request.user,
