@@ -8,6 +8,7 @@ import random
 from django.core.mail import send_mail
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
+from django.contrib.auth import get_user_model
 
 
 # Create your views here.
@@ -254,52 +255,113 @@ class SetNewPasswordView(APIView):
         return Response({"message": "Password reset successfully"}, status=status.HTTP_200_OK)
     
 
+# class SocialLogin(APIView):
+    
+#     def login_user(self, user):
+#         refresh = RefreshToken.for_user(user)
+#         return Response({
+#             'refresh': str(refresh),
+#             'access': str(refresh.access_token),
+#             'email': user.email
+#         }, status=status.HTTP_200_OK)
+
+#     def send_account_creation_email(self, user):
+#         send_mail(
+#             "Welcome to Our Platform",
+#             "Your account has been created successfully via social login.",
+#             "noreply@yourdomain.com",
+#             [user.email],
+#             fail_silently=True,
+#         )
+
+#     def post(self, request):
+#         # Get the email from the request data
+#         email = request.data.get('email')
+
+#         if not email:
+#             return Response({"error": "Email is required!"}, status=status.HTTP_400_BAD_REQUEST)
+
+#         # Check if the user exists
+#         user = User.objects.filter(email=email).first()
+
+#         if user:
+#             # If the user exists, simply log them in and return tokens
+#             return self.login_user(user)
+#         else:
+#             # If the user does not exist, create a new user
+#             user = User.objects.create_user(
+#                 email=email,
+#                 username=email,
+#                 password=None  # No password needed for social/login
+#             )
+#             user.is_active = True # Social login users are verified by provider
+#             user.save()
+            
+#             # Send account creation email
+#             self.send_account_creation_email(user)
+            
+#             # Login the newly created user and return tokens
+#             return self.login_user(user)
+
+
+User = get_user_model()
+
 class SocialLogin(APIView):
     
+    def get_user_data(self, user):
+        """Return the user info you want to send back in response."""
+        return {
+            'id': user.id,
+            'email': user.email,
+            'username': user.username,
+            'first_name': user.first_name,
+            'last_name': user.last_name,
+        }
+
     def login_user(self, user):
+        """Generate tokens and include user info."""
         refresh = RefreshToken.for_user(user)
+        user_data = self.get_user_data(user)
+
         return Response({
             'refresh': str(refresh),
             'access': str(refresh.access_token),
-            'email': user.email
+            'user': user_data
         }, status=status.HTTP_200_OK)
 
     def send_account_creation_email(self, user):
         send_mail(
             "Welcome to Our Platform",
-            "Your account has been created successfully via social login.",
+            f"Hi {user.username}, your account has been created successfully via social login.",
             "noreply@yourdomain.com",
             [user.email],
             fail_silently=True,
         )
 
     def post(self, request):
-        # Get the email from the request data
         email = request.data.get('email')
+        name = request.data.get('name') or ''  # Optional: if frontend sends a name
 
         if not email:
             return Response({"error": "Email is required!"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Check if the user exists
         user = User.objects.filter(email=email).first()
 
         if user:
-            # If the user exists, simply log them in and return tokens
+            # Existing user: login and return info
             return self.login_user(user)
         else:
-            # If the user does not exist, create a new user
+            # New user creation
             user = User.objects.create_user(
                 email=email,
                 username=email,
-                password=None  # No password needed for social/login
+                password=None
             )
-            user.is_active = True # Social login users are verified by provider
+            user.first_name = name
+            user.is_active = True
             user.save()
-            
-            # Send account creation email
+
             self.send_account_creation_email(user)
-            
-            # Login the newly created user and return tokens
             return self.login_user(user)
         
 

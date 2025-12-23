@@ -33,12 +33,16 @@ class Product(models.Model):
     initial_price = models.DecimalField(max_digits=10, decimal_places=2)
     discounted_price = models.DecimalField(max_digits=10, decimal_places=2)
     description = models.TextField(max_length=10000)
-    size = models.CharField(choices=PRODUCT_SIZE_CHOICES, max_length=2)
+    # Deprecated single size field - use available_sizes instead
+    size = models.CharField(choices=PRODUCT_SIZE_CHOICES, max_length=2, blank=True, null=True)
+    # New fields for multiple sizes and colors
+    available_sizes = models.JSONField(default=list, blank=True, help_text="Array of available sizes, e.g. ['S', 'M', 'L']")
+    available_colors = models.JSONField(default=list, blank=True, help_text="Array of color objects, e.g. [{'hex': '#FF0000', 'name': 'Red'}]")
     logo = models.ImageField(upload_to='products/')
     certificate = models.FileField(upload_to='certificate/', blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     order_count = models.IntegerField(default=0)
-    color_code = models.CharField(max_length=500, blank=True, null=True)
+    color_code = models.CharField(max_length=500, blank=True, null=True)  # Deprecated - use available_colors
     stripe_one_time_price_id = models.CharField(max_length=100, blank=True, null=True)
     stripe_subscription_price_id = models.CharField(max_length=100, blank=True, null=True)
 
@@ -70,6 +74,9 @@ class CartItem(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='cart_items', blank=True, null=True)
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     quantity = models.IntegerField(default=1)
+    selected_size = models.CharField(max_length=3, blank=True, null=True)
+    selected_color_hex = models.CharField(max_length=7, blank=True, null=True)
+    selected_color_name = models.CharField(max_length=50, blank=True, null=True)
     added_at = models.DateTimeField(auto_now_add=True, blank=True, null=True)
 
     def __str__(self):
@@ -103,6 +110,9 @@ class OrderItem(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, blank=True, null=True)
     price = models.DecimalField(max_digits=10, decimal_places=2)
     quantity = models.IntegerField(default=1)
+    ordered_size = models.CharField(max_length=3, blank=True, null=True)
+    ordered_color_hex = models.CharField(max_length=7, blank=True, null=True)
+    ordered_color_name = models.CharField(max_length=50, blank=True, null=True)
     is_free_item = models.BooleanField(default=False)
     free_item_size = models.CharField(max_length=3, choices=[('S', 'S'), ('L', 'L'), ('M', 'M'), ('XL', 'XL'), ('XXL', 'XXL')], blank=True, null=True)
 
