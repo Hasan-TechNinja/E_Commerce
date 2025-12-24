@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 from pathlib import Path
 from datetime import timedelta
 from decouple import config
+import os
 
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -179,7 +180,9 @@ STRIPE_PUBLIC_KEY = config('STRIPE_PUBLIC_KEY', default='pk_test_...')
 STRIPE_SECRET_KEY = config('STRIPE_SECRET_KEY', default='sk_test_...')
 STRIPE_WEBHOOK_SECRET = config('STRIPE_WEBHOOK_SECRET', default='whsec_...')
 
-
+STRIPE_SUCCESS_URL = config('STRIPE_SUCCESS_URL')
+STRIPE_CANCEL_URL = config('STRIPE_CANCEL_URL')
+FRONTEND_URL = config('FRONTEND_URL')
 
 
 REST_FRAMEWORK = {

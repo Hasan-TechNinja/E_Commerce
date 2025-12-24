@@ -238,6 +238,10 @@ class CheckoutView(APIView):
                         price=item.product.discounted_price,
                         quantity=item.quantity
                     )
+
+                    # ✅ Update product order_count
+                    item.product.order_count += item.quantity
+                    item.product.save(update_fields=['order_count'])
                 
                 # ✅ Create Free T-shirt item if eligible
                 if eligible_for_free_tshirt:
@@ -305,15 +309,17 @@ class CheckoutView(APIView):
                 #     metadata={'order_id': order.id}
                 # )
 
-                frontend_url = settings.CORS_ALLOWED_ORIGINS[0]  # take the first allowed origin
+                frontend_url = settings.FRONTEND_URL
 
                 checkout_session = stripe.checkout.Session.create(
                     payment_method_types=['card'],
                     line_items=line_items,
                     mode=mode,
-                    success_url=frontend_url + '/checkout/success?session_id={CHECKOUT_SESSION_ID}',
-                    # success_url='/order-history',
-                    cancel_url=frontend_url + '/checkout/cancel',
+                    # success_url=frontend_url + '/order-history',
+                    # # success_url='/order-history',
+                    # cancel_url=frontend_url + '/checkout/cancel',
+                    success_url=frontend_url + settings.STRIPE_SUCCESS_URL,
+                    cancel_url=frontend_url + settings.STRIPE_CANCEL_URL,
                     client_reference_id=str(order.id),
                     customer_email=request.user.email,
                     metadata={'order_id': order.id}
