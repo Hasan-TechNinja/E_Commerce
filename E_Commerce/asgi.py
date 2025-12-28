@@ -1,23 +1,21 @@
-"""
-ASGI config for E_Commerce project.
-
-It exposes the ASGI callable as a module-level variable named ``application``.
-
-For more information on this file, see
-https://docs.djangoproject.com/en/6.0/howto/deployment/asgi/
-"""
-
-import os
+# import os
 from channels.routing import ProtocolTypeRouter, URLRouter
 from django.core.asgi import get_asgi_application
+import os
+# 1️⃣ Set the Django settings module first
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'E_Commerce.settings')
+
+# 2️⃣ Initialize Django before importing anything that uses models
+django_application = get_asgi_application()
+
+# 3️⃣ Import middleware and routing AFTER Django is setup
 from chat.middleware import JWTAuthMiddleware
 import chat.routing
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'E_Commerce.settings')
-
+# 4️⃣ Build the ASGI application
 application = ProtocolTypeRouter(
     {
-        "http": get_asgi_application(),
+        "http": django_application,
         "websocket": JWTAuthMiddleware(
             URLRouter(
                 chat.routing.websocket_urlpatterns
