@@ -29,7 +29,7 @@ SECRET_KEY = 'django-insecure-9@urpd+%m8o#jnyil24h1j^y^u6csz*oy5p5#0dzic+d%yiyhs
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ["*"]
+ALLOWED_HOSTS = ["server.boostedlabs.au","boostedlabs.au", "localhost"]
 
 
 # Application definition
@@ -79,6 +79,11 @@ CORS_ALLOWED_ORIGINS = [
     'http://localhost:5175',
     'http://localhost:5173',
     
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://server.boostedlabs.au",
+    "https://boostedlabs.au",  # add this if you use both domains
 ]
 
 
