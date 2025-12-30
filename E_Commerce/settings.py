@@ -86,6 +86,9 @@ CSRF_TRUSTED_ORIGINS = [
     "https://boostedlabs.au",  # add this if you use both domains
 ]
 
+DATA_UPLOAD_MAX_MEMORY_SIZE = 52428800  # 50 MB
+FILE_UPLOAD_MAX_MEMORY_SIZE = 52428800  # 50 MB
+
 
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_ALL_ORIGINS = True
