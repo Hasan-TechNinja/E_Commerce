@@ -275,7 +275,7 @@ class CheckoutView(APIView):
                         # Fallback to dynamic price
                         line_items.append({
                             'price_data': {
-                                'currency': 'usd',
+                                'currency': 'aud',
                                 'product_data': {
                                     'name': item.product.name,
                                 },
@@ -288,7 +288,7 @@ class CheckoutView(APIView):
                 if mode == 'payment':
                     line_items.append({
                         'price_data': {
-                            'currency': 'usd',
+                            'currency': 'aud',
                             'product_data': {
                                 'name': 'Shipping Fee',
                             },
