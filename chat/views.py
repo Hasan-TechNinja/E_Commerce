@@ -35,7 +35,8 @@ class ChatHistoryView(APIView):
 class TestResponseView(APIView):
     permission_classes = [AllowAny]
 
-    def get(self, request):
+    def get(self, request, id):
         return Response({
-            'message': 'Test response from Chat API is successful.'
+            'message': 'Test response from Chat API is successful.',
+            'id': id
         }, status=status.HTTP_200_OK)
