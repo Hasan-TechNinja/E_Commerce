@@ -29,7 +29,7 @@ SECRET_KEY = 'django-insecure-9@urpd+%m8o#jnyil24h1j^y^u6csz*oy5p5#0dzic+d%yiyhs
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ["server.boostedlabs.au","boostedlabs.au", "localhost"]
+ALLOWED_HOSTS = ["server.boostedlabs.au","boostedlabs.au", "10.10.13.61"]
 
 
 # Application definition
