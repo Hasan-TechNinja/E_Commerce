@@ -15,9 +15,22 @@ class ProductImageSerializer(serializers.ModelSerializer):
 
 
 class ReviewSerializer(serializers.ModelSerializer):
+    user_name = serializers.SerializerMethodField()
+
     class Meta:
         model = Review
         fields = '__all__'
+
+    def get_user_name(self, obj):
+        try:
+            first = (obj.user_name.first_name or '').strip()
+            last = (obj.user_name.last_name or '').strip()
+            full = (first + ' ' + last).strip()
+            if full:
+                return full
+            return obj.user_name.username
+        except Exception:
+            return None
 
 
 class ProductSerializer(serializers.ModelSerializer):
