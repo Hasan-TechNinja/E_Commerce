@@ -9,7 +9,7 @@ from django.conf import settings
 import requests
 import base64
 import decimal
-from django.db.models import Avg
+from django.db.models import Avg, Q
 from django.db import transaction
 from django.core.mail import send_mail
 import stripe
@@ -691,3 +691,30 @@ class UserSubscriptionDeleteView(APIView):
             return Response({"message": "Subscription cancelled successfully"}, status=status.HTTP_200_OK)
         except stripe.error.StripeError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        
+
+class SearchProductView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        query = request.query_params.get('q', '')
+
+        if not query:
+            return Response({"error": "Search query is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Split query into terms and require that each term matches at least
+        # one of the searchable fields (name, type name, or category).
+        terms = [t.strip() for t in query.split() if t.strip()]
+
+        if not terms:
+            return Response({"error": "Search query is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        combined_q = Q()
+        for term in terms:
+            term_q = Q(name__icontains=term) | Q(type__name__icontains=term) | Q(category__icontains=term)
+            combined_q &= term_q
+
+        products = Product.objects.filter(combined_q).distinct()
+        serializer = ProductSerializer(products, many=True)
+
+        return Response(serializer.data, status=status.HTTP_200_OK)

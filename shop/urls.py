@@ -13,7 +13,7 @@ urlpatterns = [
     path('cart/items/decrease/<int:pk>/', views.DecreaseCartItemQuantityView.as_view(), name='decrease-cart-item'),
     path('checkout/', views.CheckoutView.as_view(), name='checkout'),
     path('stripe/webhook/', views.StripeWebhookView.as_view(), name='stripe-webhook'),
-
+    path('search/products/', views.SearchProductView.as_view(), name='product-search'),
     path('orders/', views.OrderListView.as_view(), name='order-list'),
     path('orders/<int:pk>/', views.OrderDetailView.as_view(), name='order-detail'),
     path('post/review/<int:pk>/', views.CreateReviewView.as_view(), name='post-review'),
