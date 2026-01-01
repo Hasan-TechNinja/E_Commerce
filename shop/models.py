@@ -138,7 +138,7 @@ class OrderAddress(models.Model):
 class ContactMessage(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, blank=True, null=True)
     name = models.CharField(max_length=255)
-    whatsapp = models.CharField(max_length=20)
+    whatsapp = models.CharField(max_length=20, blank=True, null=True)
     email = models.EmailField()
     project_details = models.TextField()
     sent_at = models.DateTimeField(auto_now_add=True)

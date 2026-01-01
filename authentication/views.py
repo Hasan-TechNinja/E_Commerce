@@ -308,9 +308,9 @@ User = get_user_model()
 
 class SocialLogin(APIView):
     
-    def get_user_data(self, user):
-        """Return the user info you want to send back in response."""
-        return {
+    def get_user_data(self, user, request=None):
+        """Return the user info you want to send back in response, including profile image if present."""
+        data = {
             'id': user.id,
             'email': user.email,
             'username': user.username,
@@ -318,10 +318,27 @@ class SocialLogin(APIView):
             'last_name': user.last_name,
         }
 
-    def login_user(self, user):
+        try:
+            profile = Profile.objects.filter(user=user).first()
+            if profile and profile.image:
+                try:
+                    img_url = profile.image.url
+                    if request is not None:
+                        img_url = request.build_absolute_uri(img_url)
+                    data['image'] = img_url
+                except Exception:
+                    data['image'] = None
+            else:
+                data['image'] = None
+        except Exception:
+            data['image'] = None
+
+        return data
+
+    def login_user(self, user, request=None):
         """Generate tokens and include user info."""
         refresh = RefreshToken.for_user(user)
-        user_data = self.get_user_data(user)
+        user_data = self.get_user_data(user, request=request)
 
         return Response({
             'refresh': str(refresh),
@@ -349,7 +366,7 @@ class SocialLogin(APIView):
 
         if user:
             # Existing user: login and return info
-            return self.login_user(user)
+            return self.login_user(user, request=request)
         else:
             # New user creation
             user = User.objects.create_user(
@@ -362,7 +379,7 @@ class SocialLogin(APIView):
             user.save()
 
             self.send_account_creation_email(user)
-            return self.login_user(user)
+            return self.login_user(user, request=request)
         
 
 class LogoutView(APIView):

@@ -348,6 +348,32 @@ class StripeWebhookView(APIView):
                     order.is_paid = True
                     order.status = 'Processing'
                     order.save()
+                    # Send confirmation email to customer and notification to admin
+                    try:
+                        customer_email = order.email
+                        from_email = settings.DEFAULT_FROM_EMAIL
+
+                        # Build order summary
+                        items = order.items.all()
+                        lines = [f"Thank you for your order #{order.id}."]
+                        lines.append(f"Total: {order.total_price}")
+                        lines.append("Items:")
+                        for it in items:
+                            prod_name = it.product.name if it.product else 'Free item'
+                            lines.append(f"- {prod_name} x{it.quantity} @ {it.price}")
+                        lines.append(f"Shipping Fee: {order.shipping_fee}")
+                        lines.append(f"Status: {order.status}")
+                        body = "\n".join(lines)
+
+                        subject = f"Order Confirmation - Order #{order.id}"
+                        send_mail(subject, body, from_email, [customer_email], fail_silently=True)
+
+                        admin_email = getattr(settings, 'ADMIN_EMAIL', None) or from_email
+                        admin_subject = f"New Order Paid - #{order.id}"
+                        admin_body = f"Order {order.id} has been paid by {customer_email}.\n\n" + body
+                        send_mail(admin_subject, admin_body, from_email, [admin_email], fail_silently=True)
+                    except Exception as e:
+                        print(f"Error sending order confirmation emails: {e}")
                 except Order.DoesNotExist:
                     pass
 
