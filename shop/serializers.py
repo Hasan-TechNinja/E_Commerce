@@ -67,3 +67,29 @@ class UserSubscriptionSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserSubscription
         fields = '__all__'
+
+
+class CheckoutAddressSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=255)
+    phone = serializers.CharField(max_length=100)
+    address = serializers.CharField(max_length=255)
+    type = serializers.ChoiceField(choices=[('home', 'Home'), ('office', 'Office')])
+
+
+class GuestCartItemSerializer(serializers.Serializer):
+    product_id = serializers.IntegerField()
+    quantity = serializers.IntegerField(min_value=1)
+
+
+class GuestCheckoutSerializer(serializers.Serializer):
+    cart_items = GuestCartItemSerializer(many=True)
+    address = CheckoutAddressSerializer()
+    email = serializers.EmailField()
+    free_tshirt_size = serializers.ChoiceField(choices=['S', 'M', 'L', 'XL', 'XXL'], required=False)
+    is_subscription = serializers.BooleanField(default=False)
+
+
+class AuthenticatedCheckoutSerializer(serializers.Serializer):
+    address = CheckoutAddressSerializer()
+    free_tshirt_size = serializers.ChoiceField(choices=['S', 'M', 'L', 'XL', 'XXL'], required=False)
+    is_subscription = serializers.BooleanField(default=False)

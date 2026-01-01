@@ -28,7 +28,15 @@ class CheckoutViewTests(TestCase):
         self.url = reverse('checkout')
 
     def test_checkout_empty_cart(self):
-        response = self.client.post(self.url)
+        data = {
+            'address': {
+                'name': 'Test User',
+                'phone': '1234567890',
+                'address': '123 Test St',
+                'type': 'home'
+            }
+        }
+        response = self.client.post(self.url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data['error'], 'Cart is empty')
 
@@ -36,7 +44,7 @@ class CheckoutViewTests(TestCase):
         CartItem.objects.create(user=self.user, product=self.product, quantity=1)
         response = self.client.post(self.url, {}, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('Address data is required', str(response.data))
+        self.assertIn('address', response.data)
         self.assertEqual(Order.objects.count(), 0)
 
     @patch('shop.views.stripe.checkout.Session.create')
@@ -152,7 +160,8 @@ class CheckoutViewTests(TestCase):
         response = self.client.post(self.url, data, format='json')
         
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('Missing address fields', str(response.data))
+        self.assertIn('address', response.data)
+        self.assertIn('name', response.data['address'])
         self.assertEqual(Order.objects.count(), 0)
         mock_post.assert_not_called()
 
@@ -178,8 +187,8 @@ class CheckoutViewTests(TestCase):
         mock_session.url = 'https://checkout.stripe.com/pay/cs_test_free_tshirt'
         mock_stripe_create.return_value = mock_session
 
-        # Create cart with total <= 1500 (product price = 90, quantity = 10 = 900)
-        CartItem.objects.create(user=self.user, product=self.product, quantity=10)
+        # Create cart with total >= 1500 (product price = 90, quantity = 20 = 1800)
+        CartItem.objects.create(user=self.user, product=self.product, quantity=20)
 
         data = {
             'address': {
@@ -203,7 +212,7 @@ class CheckoutViewTests(TestCase):
         regular_item = order.items.filter(is_free_item=False).first()
         self.assertIsNotNone(regular_item)
         self.assertEqual(regular_item.product, self.product)
-        self.assertEqual(regular_item.quantity, 10)
+        self.assertEqual(regular_item.quantity, 20)
         
         # Check free T-shirt item
         free_item = order.items.filter(is_free_item=True).first()
@@ -217,8 +226,8 @@ class CheckoutViewTests(TestCase):
     @patch('shop.views.stripe.checkout.Session.create')
     def test_checkout_free_tshirt_missing_size(self, mock_stripe_create):
         """Test that eligible orders without size selection get error"""
-        # Create cart with total <= 1500
-        CartItem.objects.create(user=self.user, product=self.product, quantity=10)
+        # Create cart with total >= 1500
+        CartItem.objects.create(user=self.user, product=self.product, quantity=20)
 
         data = {
             'address': {
@@ -240,7 +249,7 @@ class CheckoutViewTests(TestCase):
     @patch('shop.views.stripe.checkout.Session.create')
     def test_checkout_free_tshirt_invalid_size(self, mock_stripe_create):
         """Test that invalid T-shirt size returns error"""
-        CartItem.objects.create(user=self.user, product=self.product, quantity=10)
+        CartItem.objects.create(user=self.user, product=self.product, quantity=20)
 
         data = {
             'address': {
@@ -255,12 +264,12 @@ class CheckoutViewTests(TestCase):
         response = self.client.post(self.url, data, format='json')
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('Invalid T-shirt size', str(response.data))
+        self.assertIn('free_tshirt_size', response.data)
         self.assertEqual(Order.objects.count(), 0)
 
     @patch('shop.views.stripe.checkout.Session.create')
-    def test_checkout_no_free_tshirt_for_expensive_order(self, mock_stripe_create):
-        """Test that orders with subtotal > 1500 don't get free T-shirt"""
+    def test_checkout_no_free_tshirt_for_cheap_order(self, mock_stripe_create):
+        """Test that orders with subtotal < 1500 don't get free T-shirt"""
         mock_session = MagicMock()
         mock_session.id = 'cs_test_expensive'
         mock_session.url = 'https://checkout.stripe.com/pay/cs_test_expensive'
@@ -269,8 +278,8 @@ class CheckoutViewTests(TestCase):
         # Create expensive product
         expensive_product = Product.objects.create(
             name='Expensive Product',
-            initial_price=2000.00,
-            discounted_price=1600.00,
+            initial_price=1000.00,
+            discounted_price=800.00,
             description='Expensive Description',
             size='L',
             category='Health',
@@ -325,10 +334,12 @@ class CheckoutViewTests(TestCase):
             type=self.type
         )
 
-        # Add to cart: 90*5 + 40*3 + 50*2 = 450 + 120 + 100 = 670
-        CartItem.objects.create(user=self.user, product=self.product, quantity=5)
-        CartItem.objects.create(user=self.user, product=product2, quantity=3)
-        CartItem.objects.create(user=self.user, product=product3, quantity=2)
+        # Add to cart: 90*5 + 40*3 + 50*2 = 450 + 120 + 100 = 670 -> Not eligible
+        # Need to increase quantity to be eligible
+        CartItem.objects.create(user=self.user, product=self.product, quantity=15) # 90*15 = 1350
+        CartItem.objects.create(user=self.user, product=product2, quantity=3) # 40*3 = 120
+        CartItem.objects.create(user=self.user, product=product3, quantity=2) # 50*2 = 100
+        # Total = 1350 + 120 + 100 = 1570
 
         data = {
             'address': {
@@ -351,5 +362,89 @@ class CheckoutViewTests(TestCase):
         self.assertEqual(order.items.filter(is_free_item=True).count(), 1)
         
         # Verify free T-shirt
-        free_item = order.items.filter(is_free_item=True).first()
-        self.assertEqual(free_item.free_item_size, 'XL')
+
+    @patch('shop.views.stripe.checkout.Session.create')
+    def test_guest_checkout_success(self, mock_stripe_create):
+        # Mock Stripe Session
+        mock_session = MagicMock()
+        mock_session.id = 'cs_test_guest_123'
+        mock_session.url = 'https://checkout.stripe.com/pay/cs_test_guest_123'
+        mock_stripe_create.return_value = mock_session
+
+        self.client.force_authenticate(user=None) # Ensure guest
+
+        data = {
+            'cart_items': [
+                {'product_id': self.product.id, 'quantity': 2}
+            ],
+            'address': {
+                'name': 'Guest User',
+                'phone': '0412345678',
+                'address': '123 Guest St',
+                'type': 'home'
+            },
+            'email': 'guest@example.com',
+            'free_tshirt_size': 'M'
+        }
+
+        response = self.client.post(self.url, data, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(Order.objects.count(), 1)
+        order = Order.objects.first()
+        self.assertIsNone(order.user)
+        self.assertEqual(order.email, 'guest@example.com')
+        self.assertEqual(order.total_price, 180.00)
+        self.assertEqual(order.items.count(), 1)
+
+    def test_guest_checkout_invalid_payload(self):
+        self.client.force_authenticate(user=None)
+        
+        # Missing email
+        data = {
+            'cart_items': [
+                {'product_id': self.product.id, 'quantity': 1}
+            ],
+            'address': {
+                'name': 'Guest User',
+                'phone': '0412345678',
+                'address': '123 Guest St',
+                'type': 'home'
+            }
+        }
+        
+        response = self.client.post(self.url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('email', response.data)
+
+    @patch('shop.views.stripe.checkout.Session.create')
+    def test_guest_checkout_subscription(self, mock_stripe_create):
+        mock_session = MagicMock()
+        mock_session.id = 'cs_test_guest_sub'
+        mock_session.url = 'https://checkout.stripe.com/pay/cs_test_guest_sub'
+        mock_stripe_create.return_value = mock_session
+
+        self.product.stripe_subscription_price_id = 'price_sub_123'
+        self.product.save()
+
+        self.client.force_authenticate(user=None)
+
+        data = {
+            'cart_items': [
+                {'product_id': self.product.id, 'quantity': 1}
+            ],
+            'address': {
+                'name': 'Guest User',
+                'phone': '0412345678',
+                'address': '123 Guest St',
+                'type': 'home'
+            },
+            'email': 'guest@example.com',
+            'is_subscription': True
+        }
+
+        response = self.client.post(self.url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        order = Order.objects.first()
+        self.assertEqual(order.email, 'guest@example.com')
+

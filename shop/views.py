@@ -1,7 +1,7 @@
 from django.shortcuts import render
 from . models import CartItem, ContactMessage, Product, Review, Order, OrderItem, OrderAddress, Type, UserSubscription
 from django.contrib.auth.models import User
-from . serializers import CartItemSerializer, ProductSerializer, ReviewSerializer, OrderSerializer, TypeSerializer, UserSubscriptionSerializer
+from . serializers import CartItemSerializer, ProductSerializer, ReviewSerializer, OrderSerializer, TypeSerializer, UserSubscriptionSerializer, GuestCheckoutSerializer, AuthenticatedCheckoutSerializer
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, permissions
@@ -167,70 +167,78 @@ class DecreaseCartItemQuantityView(APIView):
 
 
 class CheckoutView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
 
     def post(self, request):
-        cart_items = CartItem.objects.filter(user=request.user)
-        if not cart_items.exists():
-            return Response({"error": "Cart is empty"}, status=status.HTTP_400_BAD_REQUEST)
+        # Determine which serializer to use
+        if request.user and request.user.is_authenticated:
+            serializer = AuthenticatedCheckoutSerializer(data=request.data)
+        else:
+            serializer = GuestCheckoutSerializer(data=request.data)
 
-        # ✅ Validate Address Data
-        address_data = request.data.get('address')
-        if not address_data:
-            return Response({"error": "Address data is required"}, status=status.HTTP_400_BAD_REQUEST)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        if not isinstance(address_data, dict):
-            return Response({"error": "Address data must be a dictionary"}, status=status.HTTP_400_BAD_REQUEST)
+        validated_data = serializer.validated_data
+        address_data = validated_data['address']
+        free_tshirt_size = validated_data.get('free_tshirt_size')
+        is_subscription = validated_data.get('is_subscription', False)
 
-        required_fields = ['name', 'phone', 'address', 'type']
-        missing_fields = [field for field in required_fields if not address_data.get(field)]
-        if missing_fields:
-            return Response({"error": f"Missing address fields: {', '.join(missing_fields)}"}, status=status.HTTP_400_BAD_REQUEST)
+        # Prepare Cart Items and User
+        if request.user and request.user.is_authenticated:
+            server_cart_qs = CartItem.objects.filter(user=request.user)
+            if not server_cart_qs.exists():
+                return Response({"error": "Cart is empty"}, status=status.HTTP_400_BAD_REQUEST)
+            cart_items = list(server_cart_qs) # Evaluate to list to avoid issues if QS is deleted later
+            clear_server_cart = True
+            order_user = request.user
+            customer_email = request.user.email
+        else:
+            # Guest User
+            cart_items_data = validated_data['cart_items']
+            from types import SimpleNamespace
+            built_items = []
+            try:
+                for ci in cart_items_data:
+                    product = Product.objects.get(pk=ci['product_id'])
+                    built_items.append(SimpleNamespace(product=product, quantity=ci['quantity']))
+            except Product.DoesNotExist:
+                return Response({"error": "One or more products in cart_items not found"}, status=status.HTTP_404_NOT_FOUND)
+            
+            cart_items = built_items
+            clear_server_cart = False
+            order_user = None
+            customer_email = validated_data['email']
 
-        # ✅ Calculate totals
+        # Calculate totals
         total_price = sum(item.product.discounted_price * item.quantity for item in cart_items)
-        shipping_fee = decimal.Decimal('50.00')  # Flat shipping fee (can be made dynamic)
+        shipping_fee = decimal.Decimal('50.00')
 
-        # ✅ Check free T-shirt eligibility (subtotal <= 1500)
+        # Free T-shirt eligibility check
         eligible_for_free_tshirt = total_price >= decimal.Decimal('1500.00')
-        free_tshirt_size = request.data.get('free_tshirt_size')
-        
-        # Validate free T-shirt size if eligible
         if eligible_for_free_tshirt:
             if not free_tshirt_size:
-                return Response({
-                    "error": "You are eligible for a free T-shirt! Please select your T-shirt size (S, L, M, XL, XXL)."
-                }, status=status.HTTP_400_BAD_REQUEST)
-            
-            valid_sizes = ['S', 'L', 'M', 'XL', 'XXL']
-            if free_tshirt_size not in valid_sizes:
-                return Response({
-                    "error": f"Invalid T-shirt size. Please choose from: {', '.join(valid_sizes)}"
-                }, status=status.HTTP_400_BAD_REQUEST)
-
-        is_subscription = request.data.get('is_subscription', False)
-
+                 return Response({"error": "You are eligible for a free T-shirt! Please select your T-shirt size (S, L, M, XL, XXL)."}, status=status.HTTP_400_BAD_REQUEST)
+        
         try:
             with transaction.atomic():
-                # ✅ Create Order
                 order = Order.objects.create(
-                    user=request.user,
+                    user=order_user,
+                    email=customer_email,
                     total_price=total_price,
                     shipping_fee=shipping_fee,
                     status='Pending',
                     is_paid=False
                 )
 
-                # ✅ Create Order Address
                 OrderAddress.objects.create(
                     order=order,
-                    name=address_data.get('name'),
-                    phone=address_data.get('phone'),
-                    address=address_data.get('address'),
-                    type=address_data.get('type')
+                    name=address_data['name'],
+                    phone=address_data['phone'],
+                    address=address_data['address'],
+                    type=address_data['type']
                 )
 
-                # ✅ Create Order Items
                 for item in cart_items:
                     OrderItem.objects.create(
                         order=order,
@@ -238,76 +246,52 @@ class CheckoutView(APIView):
                         price=item.product.discounted_price,
                         quantity=item.quantity
                     )
-
-                    # ✅ Update product order_count
                     item.product.order_count += item.quantity
                     item.product.save(update_fields=['order_count'])
-                
-                # ✅ Create Free T-shirt item if eligible
+
                 if eligible_for_free_tshirt:
                     OrderItem.objects.create(
                         order=order,
-                        product=None,  # No product reference for free promotional item
+                        product=None,
                         price=decimal.Decimal('0.00'),
                         quantity=1,
                         is_free_item=True,
                         free_item_size=free_tshirt_size
                     )
 
-                # ✅ Prepare Stripe Checkout line items
+                # Prepare Stripe line items
                 line_items = []
                 mode = 'subscription' if is_subscription else 'payment'
 
                 for item in cart_items:
-                    # Get appropriate price_id based on payment mode
                     if is_subscription:
                         price_id = getattr(item.product, 'stripe_subscription_price_id', None)
                     else:
-                        price_id = getattr(item.product, 'stripe_one_time_price_id', None)
+                        # Force use of price_data (AUD) for one-time payments to avoid currency mismatch
+                        # if the database has USD price IDs.
+                        price_id = None
 
                     if price_id:
-                        # Use Stripe predefined price
-                        line_items.append({
-                            'price': price_id,
-                            'quantity': item.quantity,
-                        })
+                        line_items.append({'price': price_id, 'quantity': item.quantity})
                     else:
-                        # Fallback to dynamic price
                         line_items.append({
                             'price_data': {
                                 'currency': 'aud',
-                                'product_data': {
-                                    'name': item.product.name,
-                                },
+                                'product_data': {'name': item.product.name},
                                 'unit_amount': int(item.product.discounted_price * 100),
                             },
                             'quantity': item.quantity,
                         })
 
-                # ✅ Add shipping fee only for one-time payments
                 if mode == 'payment':
                     line_items.append({
                         'price_data': {
                             'currency': 'aud',
-                            'product_data': {
-                                'name': 'Shipping Fee',
-                            },
+                            'product_data': {'name': 'Shipping Fee'},
                             'unit_amount': int(shipping_fee * 100),
                         },
                         'quantity': 1,
                     })
-        
-                # # ✅ Create Stripe Checkout Session
-                # checkout_session = stripe.checkout.Session.create(
-                #     payment_method_types=['card'],
-                #     line_items=line_items,
-                #     mode=mode,
-                #     success_url=settings.CORS_ALLOWED_ORIGINS[6] + '/checkout/success?session_id={CHECKOUT_SESSION_ID}',
-                #     cancel_url=settings.CORS_ALLOWED_ORIGINS[6] + '/checkout/cancel',
-                #     client_reference_id=str(order.id),
-                #     customer_email=request.user.email,
-                #     metadata={'order_id': order.id}
-                # )
 
                 frontend_url = settings.FRONTEND_URL
 
@@ -315,30 +299,22 @@ class CheckoutView(APIView):
                     payment_method_types=['card'],
                     line_items=line_items,
                     mode=mode,
-                    # success_url=frontend_url + '/order-history',
-                    # # success_url='/order-history',
-                    # cancel_url=frontend_url + '/checkout/cancel',
                     success_url=frontend_url + settings.STRIPE_SUCCESS_URL,
                     cancel_url=frontend_url + settings.STRIPE_CANCEL_URL,
                     client_reference_id=str(order.id),
-                    customer_email=request.user.email,
+                    customer_email=customer_email,
                     metadata={'order_id': order.id}
                 )
 
-
-                # ✅ Save Stripe session info
                 order.stripe_checkout_session_id = checkout_session.id
                 order.save()
 
-                # ✅ Clear cart after creating session
-                cart_items.delete()
+                # Clear server cart only for authenticated users
+                if clear_server_cart and request.user and request.user.is_authenticated:
+                    CartItem.objects.filter(user=request.user).delete()
 
                 serializer = OrderSerializer(order)
-
-                return Response({
-                    'order': serializer.data,
-                    'checkout_url': checkout_session.url
-                }, status=status.HTTP_201_CREATED)
+                return Response({'order': serializer.data, 'checkout_url': checkout_session.url}, status=status.HTTP_201_CREATED)
 
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
