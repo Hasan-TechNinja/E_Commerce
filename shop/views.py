@@ -485,8 +485,16 @@ class ContactMessageView(APIView):
         email = request.data.get('email')
         project_details = request.data.get('project_details')
 
-        if not all([name, whatsapp, email, project_details]):
-            return Response({'error': 'All fields are required'}, status=status.HTTP_400_BAD_REQUEST)
+        # if not all([name, whatsapp, email, project_details]):
+        #     return Response({'error': 'All fields are required'}, status=status.HTTP_400_BAD_REQUEST)
+        if not email:
+            return Response({'error': 'Email is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not project_details:
+            return Response({'error': 'Project details are required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not name: 
+            return Response({'error': 'Name is required'}, status=status.HTTP_400_BAD_REQUEST)
         
         if request.user.is_authenticated:
             user = request.user
