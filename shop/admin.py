@@ -63,7 +63,7 @@ class ContactMessageAdmin(admin.ModelAdmin):
 
 
 
-admin.site.site_header = "E-Commerce Admin"
-admin.site.site_title = "E-Commerce Admin Portal"
-admin.site.index_title = "Welcome to E-Commerce Admin Portal" 
+admin.site.site_header = "Boosted Labs Admin"
+admin.site.site_title = "Boosted Labs Admin Portal"
+admin.site.index_title = "Welcome to Boosted Labs Admin Portal" 
 admin.site.enable_nav_sidebar = True
