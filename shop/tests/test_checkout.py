@@ -8,6 +8,7 @@ from unittest.mock import patch
 import requests
 import unittest
 from unittest.mock import patch, MagicMock
+from django.conf import settings
 
 
 class CheckoutViewTests(TestCase):
@@ -77,6 +78,10 @@ class CheckoutViewTests(TestCase):
         self.assertEqual(order.stripe_checkout_session_id, 'cs_test_123')
         self.assertEqual(CartItem.objects.count(), 0)
         self.assertEqual(response.data['checkout_url'], 'https://checkout.stripe.com/pay/cs_test_123')
+
+        # Verify success_url for authenticated user
+        _, kwargs = mock_stripe_create.call_args
+        self.assertTrue(kwargs['success_url'].endswith(settings.STRIPE_SUCCESS_URL))
 
     @patch('shop.views.stripe.checkout.Session.create')
     def test_checkout_subscription_success(self, mock_stripe_create):
@@ -396,6 +401,13 @@ class CheckoutViewTests(TestCase):
         self.assertEqual(order.email, 'guest@example.com')
         self.assertEqual(order.total_price, 180.00)
         self.assertEqual(order.items.count(), 1)
+        
+        # Verify success_url for guest
+        # We need to check the call args of mock_stripe_create
+        # The mock is passed as an argument to the test method
+        _, kwargs = mock_stripe_create.call_args
+        self.assertTrue(kwargs['success_url'].endswith('/'))
+        self.assertFalse(kwargs['success_url'].endswith(settings.STRIPE_SUCCESS_URL))
 
     def test_guest_checkout_invalid_payload(self):
         self.client.force_authenticate(user=None)

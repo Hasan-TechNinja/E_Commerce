@@ -295,11 +295,16 @@ class CheckoutView(APIView):
 
                 frontend_url = settings.FRONTEND_URL
 
+                if request.user and request.user.is_authenticated:
+                    success_url = frontend_url + settings.STRIPE_SUCCESS_URL
+                else:
+                    success_url = frontend_url + '/shop/home/'
+
                 checkout_session = stripe.checkout.Session.create(
                     payment_method_types=['card'],
                     line_items=line_items,
                     mode=mode,
-                    success_url=frontend_url + settings.STRIPE_SUCCESS_URL,
+                    success_url=success_url,
                     cancel_url=frontend_url + settings.STRIPE_CANCEL_URL,
                     client_reference_id=str(order.id),
                     customer_email=customer_email,
