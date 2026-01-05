@@ -298,7 +298,7 @@ class CheckoutView(APIView):
                 if request.user and request.user.is_authenticated:
                     success_url = frontend_url + settings.STRIPE_SUCCESS_URL
                 else:
-                    success_url = frontend_url + '/'
+                    success_url = frontend_url + ''
 
                 checkout_session = stripe.checkout.Session.create(
                     payment_method_types=['card'],
