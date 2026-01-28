@@ -24,7 +24,7 @@ class Type(models.Model):
 
     def __str__(self):
         return self.name
-    
+        
 
 class Product(models.Model):
     category = models.CharField(choices=CATEGORY_CHOICES, max_length=20)
@@ -43,8 +43,7 @@ class Product(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     order_count = models.IntegerField(default=0)
     color_code = models.CharField(max_length=500, blank=True, null=True)  # Deprecated - use available_colors
-    stripe_one_time_price_id = models.CharField(max_length=100, blank=True, null=True)
-    stripe_subscription_price_id = models.CharField(max_length=100, blank=True, null=True)
+    nowpayments_product_id = models.CharField(max_length=100, blank=True, null=True)
 
     def __str__(self):
         return self.name
@@ -99,7 +98,7 @@ class Order(models.Model):
     shipping_fee = models.DecimalField(max_digits=10, decimal_places=2)
     status = models.CharField(max_length=20, choices=ORDER_STATUS_CHOICES, default='Pending')
     is_paid = models.BooleanField(default=False)
-    stripe_checkout_session_id = models.CharField(max_length=255, blank=True, null=True)
+    nowpayments_payment_id = models.CharField(max_length=255, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -148,10 +147,10 @@ class ContactMessage(models.Model):
 
 
 class UserSubscription(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='subscriptions')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='subscriptions', blank=True, null=True)
+    email = models.EmailField(blank=True, null=True)
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
-    stripe_subscription_id = models.CharField(max_length=255)
-    stripe_subscription_item_id = models.CharField(max_length=255, blank=True, null=True)
+    nowpayments_subscription_id = models.CharField(max_length=255, blank=True, null=True)
     quantity = models.IntegerField(default=1)
     status = models.CharField(max_length=50, default='Active')
     created_at = models.DateTimeField(auto_now_add=True)

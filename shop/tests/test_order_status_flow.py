@@ -35,30 +35,29 @@ class OrderStatusFlowTest(TestCase):
         )
         self.assertEqual(order.status, 'Pending')
 
-        # 2. Payment Success (Webhook)
-        # Mock stripe webhook event
+        # 2. Payment Success (IPN)
         payload = {
-            'id': 'evt_test',
-            'type': 'checkout.session.completed',
-            'data': {
-                'object': {
-                    'client_reference_id': str(order.id),
-                    'mode': 'payment'
-                }
-            }
+            'payment_status': 'finished',
+            'order_id': order.id,
+            'price_amount': 190.0
         }
         
-        # We need to mock the signature verification
-        with patch('stripe.Webhook.construct_event') as mock_construct_event:
-            mock_construct_event.return_value = payload
-            
-            response = self.client.post(
-                reverse('stripe-webhook'),
-                data=json.dumps(payload),
-                content_type='application/json',
-                HTTP_STRIPE_SIGNATURE='test_signature'
-            )
-            self.assertEqual(response.status_code, 200)
+        import hmac
+        import hashlib
+        import json
+        
+        sorted_data = dict(sorted(payload.items()))
+        data_string = json.dumps(sorted_data, separators=(',', ':'))
+        sig = hmac.new(settings.NOWPAYMENTS_IPN_SECRET.encode(), data_string.encode(), hashlib.sha512).hexdigest()
+
+        url = reverse('nowpayments-ipn')
+        response = self.client.post(
+            url,
+            data=json.dumps(payload),
+            content_type='application/json',
+            HTTP_X_NOWPAYMENTS_SIG=sig
+        )
+        self.assertEqual(response.status_code, 200)
             
         order.refresh_from_db()
         self.assertEqual(order.status, 'Processing')

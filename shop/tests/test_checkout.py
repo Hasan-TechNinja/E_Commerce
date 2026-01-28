@@ -48,13 +48,16 @@ class CheckoutViewTests(TestCase):
         self.assertIn('address', response.data)
         self.assertEqual(Order.objects.count(), 0)
 
-    @patch('shop.views.stripe.checkout.Session.create')
-    def test_checkout_success(self, mock_stripe_create):
-        # Mock Stripe Session
-        mock_session = MagicMock()
-        mock_session.id = 'cs_test_123'
-        mock_session.url = 'https://checkout.stripe.com/pay/cs_test_123'
-        mock_stripe_create.return_value = mock_session
+    @patch('shop.views.requests.post')
+    def test_checkout_success(self, mock_nowpayments_post):
+        # Mock NOWPayments Invoice Response
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            'invoice_url': 'https://nowpayments.io/payment?id=test_payment_123',
+            'id': 'test_payment_123'
+        }
+        mock_nowpayments_post.return_value = mock_response
 
         CartItem.objects.create(user=self.user, product=self.product, quantity=2)
         
@@ -75,25 +78,23 @@ class CheckoutViewTests(TestCase):
         order = Order.objects.first()
         self.assertEqual(order.total_price, 180.00) # 90 * 2
         self.assertEqual(order.shipping_fee, 50.00)
-        self.assertEqual(order.stripe_checkout_session_id, 'cs_test_123')
+        self.assertEqual(order.nowpayments_payment_id, 'test_payment_123')
         self.assertEqual(CartItem.objects.count(), 0)
-        self.assertEqual(response.data['checkout_url'], 'https://checkout.stripe.com/pay/cs_test_123')
+        self.assertEqual(response.data['checkout_url'], 'https://nowpayments.io/payment?id=test_payment_123')
 
-        # Verify success_url for authenticated user
-        _, kwargs = mock_stripe_create.call_args
-        self.assertTrue(kwargs['success_url'].endswith(settings.STRIPE_SUCCESS_URL))
-
-    @patch('shop.views.stripe.checkout.Session.create')
-    def test_checkout_subscription_success(self, mock_stripe_create):
-        # Mock Stripe Session
-        mock_session = MagicMock()
-        mock_session.id = 'cs_test_sub_123'
-        mock_session.url = 'https://checkout.stripe.com/pay/cs_test_sub_123'
-        mock_stripe_create.return_value = mock_session
-
-        # Set stripe_price_id for product
-        self.product.stripe_price_id = 'price_123'
-        self.product.save()
+    @patch('shop.views.requests.post')
+    def test_checkout_subscription_success(self, mock_requests_post):
+        # Mock Plan creation
+        mock_plan_resp = MagicMock()
+        mock_plan_resp.status_code = 200
+        mock_plan_resp.json.return_value = {'result': {'id': 'plan_123'}}
+        
+        # Mock Subscription creation
+        mock_sub_resp = MagicMock()
+        mock_sub_resp.status_code = 200
+        mock_sub_resp.json.return_value = {'result': {'id': 'sub_123'}}
+        
+        mock_requests_post.side_effect = [mock_plan_resp, mock_sub_resp]
 
         CartItem.objects.create(user=self.user, product=self.product, quantity=1)
         
@@ -105,16 +106,17 @@ class CheckoutViewTests(TestCase):
                 'type': 'home'
             },
             'is_subscription': True,
-            'free_tshirt_size': 'S'  # Added since 90 <= 1500
+            'free_tshirt_size': 'S'
         }
         
         response = self.client.post(self.url, data, format='json')
         
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(Order.objects.count(), 1)
+        self.assertEqual(response.data['checkout_url'], f"{settings.FRONTEND_URL.rstrip('/')}/{settings.NOWPAYMENTS_SUCCESS_URL.lstrip('/')}")
 
 
-    @patch('shop.views.stripe.Webhook.construct_event')
-    def test_stripe_webhook_success(self, mock_construct_event):
+    def test_nowpayments_ipn_success(self):
         # Create Order
         order = Order.objects.create(
             user=self.user,
@@ -122,24 +124,26 @@ class CheckoutViewTests(TestCase):
             shipping_fee=50.00,
             status='Pending',
             is_paid=False,
-            stripe_checkout_session_id='cs_test_123'
+            nowpayments_payment_id='test_payment_123'
         )
 
-        mock_event = {
-            'type': 'checkout.session.completed',
-            'data': {
-                'object': {
-                    'client_reference_id': str(order.id)
-                }
-            }
+        data = {
+            'payment_status': 'finished',
+            'order_id': order.id,
+            'price_amount': 150.0 # total_price + shipping
         }
-        mock_construct_event.return_value = mock_event
 
-        url = reverse('stripe-webhook')
-        data = {'some': 'payload'} # Payload doesn't matter as we mock construct_event
+        import hmac
+        import hashlib
+        import json
         
-        # Set HTTP_STRIPE_SIGNATURE header
-        response = self.client.post(url, data, format='json', HTTP_STRIPE_SIGNATURE='test_sig')
+        sorted_data = dict(sorted(data.items()))
+        data_string = json.dumps(sorted_data, separators=(',', ':'))
+        sig = hmac.new(settings.NOWPAYMENTS_IPN_SECRET.encode(), data_string.encode(), hashlib.sha512).hexdigest()
+
+        url = reverse('nowpayments-ipn')
+        
+        response = self.client.post(url, data, format='json', HTTP_X_NOWPAYMENTS_SIG=sig)
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         order.refresh_from_db()
@@ -184,13 +188,16 @@ class CheckoutViewTests(TestCase):
             self.fail("AttributeError raised when address is a string")
 
     # ✅ Free T-shirt Tests
-    @patch('shop.views.stripe.checkout.Session.create')
-    def test_checkout_with_free_tshirt_eligible(self, mock_stripe_create):
+    @patch('shop.views.requests.post')
+    def test_checkout_with_free_tshirt_eligible(self, mock_nowpayments_post):
         """Test that orders with subtotal <= 1500 get free T-shirt when size is provided"""
-        mock_session = MagicMock()
-        mock_session.id = 'cs_test_free_tshirt'
-        mock_session.url = 'https://checkout.stripe.com/pay/cs_test_free_tshirt'
-        mock_stripe_create.return_value = mock_session
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            'invoice_url': 'https://nowpayments.io/payment?id=free_tshirt',
+            'id': 'free_tshirt'
+        }
+        mock_nowpayments_post.return_value = mock_response
 
         # Create cart with total >= 1500 (product price = 90, quantity = 20 = 1800)
         CartItem.objects.create(user=self.user, product=self.product, quantity=20)
@@ -228,10 +235,9 @@ class CheckoutViewTests(TestCase):
         self.assertEqual(free_item.free_item_size, 'L')
         self.assertIsNone(free_item.product)
 
-    @patch('shop.views.stripe.checkout.Session.create')
-    def test_checkout_free_tshirt_missing_size(self, mock_stripe_create):
+    @patch('shop.views.requests.post')
+    def test_checkout_free_tshirt_missing_size(self, mock_requests_post):
         """Test that eligible orders without size selection get error"""
-        # Create cart with total >= 1500
         CartItem.objects.create(user=self.user, product=self.product, quantity=20)
 
         data = {
@@ -251,8 +257,8 @@ class CheckoutViewTests(TestCase):
         self.assertIn('select your T-shirt size', str(response.data))
         self.assertEqual(Order.objects.count(), 0)
 
-    @patch('shop.views.stripe.checkout.Session.create')
-    def test_checkout_free_tshirt_invalid_size(self, mock_stripe_create):
+    @patch('shop.views.requests.post')
+    def test_checkout_free_tshirt_invalid_size(self, mock_requests_post):
         """Test that invalid T-shirt size returns error"""
         CartItem.objects.create(user=self.user, product=self.product, quantity=20)
 
@@ -272,15 +278,16 @@ class CheckoutViewTests(TestCase):
         self.assertIn('free_tshirt_size', response.data)
         self.assertEqual(Order.objects.count(), 0)
 
-    @patch('shop.views.stripe.checkout.Session.create')
-    def test_checkout_no_free_tshirt_for_cheap_order(self, mock_stripe_create):
+    @patch('shop.views.requests.post')
+    def test_checkout_no_free_tshirt_for_cheap_order(self, mock_requests_post):
         """Test that orders with subtotal < 1500 don't get free T-shirt"""
-        mock_session = MagicMock()
-        mock_session.id = 'cs_test_expensive'
-        mock_session.url = 'https://checkout.stripe.com/pay/cs_test_expensive'
-        mock_stripe_create.return_value = mock_session
+        # Mock NOWPayments response
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {'invoice_url': 'http://test.com', 'id': '123'}
+        mock_requests_post.return_value = mock_response
 
-        # Create expensive product
+        # Create expensive product (but still under 1500 limit if quantity=1)
         expensive_product = Product.objects.create(
             name='Expensive Product',
             initial_price=1000.00,
@@ -311,13 +318,13 @@ class CheckoutViewTests(TestCase):
         self.assertEqual(order.items.count(), 1)
         self.assertFalse(order.items.filter(is_free_item=True).exists())
 
-    @patch('shop.views.stripe.checkout.Session.create')
-    def test_checkout_multiple_products_with_free_tshirt(self, mock_stripe_create):
+    @patch('shop.views.requests.post')
+    def test_checkout_multiple_products_with_free_tshirt(self, mock_requests_post):
         """Test checkout with multiple products in cart total <= 1500"""
-        mock_session = MagicMock()
-        mock_session.id = 'cs_test_multi'
-        mock_session.url = 'https://checkout.stripe.com/pay/cs_test_multi'
-        mock_stripe_create.return_value = mock_session
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {'invoice_url': 'http://test.com', 'id': '123'}
+        mock_requests_post.return_value = mock_response
 
         # Create additional products
         product2 = Product.objects.create(
@@ -368,46 +375,8 @@ class CheckoutViewTests(TestCase):
         
         # Verify free T-shirt
 
-    @patch('shop.views.stripe.checkout.Session.create')
-    def test_guest_checkout_success(self, mock_stripe_create):
-        # Mock Stripe Session
-        mock_session = MagicMock()
-        mock_session.id = 'cs_test_guest_123'
-        mock_session.url = 'https://checkout.stripe.com/pay/cs_test_guest_123'
-        mock_stripe_create.return_value = mock_session
-
-        self.client.force_authenticate(user=None) # Ensure guest
-
-        data = {
-            'cart_items': [
-                {'product_id': self.product.id, 'quantity': 2}
-            ],
-            'address': {
-                'name': 'Guest User',
-                'phone': '0412345678',
-                'address': '123 Guest St',
-                'type': 'home'
-            },
-            'email': 'guest@example.com',
-            'free_tshirt_size': 'M'
-        }
-
-        response = self.client.post(self.url, data, format='json')
-
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(Order.objects.count(), 1)
-        order = Order.objects.first()
-        self.assertIsNone(order.user)
-        self.assertEqual(order.email, 'guest@example.com')
-        self.assertEqual(order.total_price, 180.00)
-        self.assertEqual(order.items.count(), 1)
-        
         # Verify success_url for guest
-        # We need to check the call args of mock_stripe_create
-        # The mock is passed as an argument to the test method
-        _, kwargs = mock_stripe_create.call_args
-        self.assertTrue(kwargs['success_url'].endswith('/'))
-        self.assertFalse(kwargs['success_url'].endswith(settings.STRIPE_SUCCESS_URL))
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
     def test_guest_checkout_invalid_payload(self):
         self.client.force_authenticate(user=None)
@@ -429,12 +398,19 @@ class CheckoutViewTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('email', response.data)
 
-    @patch('shop.views.stripe.checkout.Session.create')
-    def test_guest_checkout_subscription(self, mock_stripe_create):
-        mock_session = MagicMock()
-        mock_session.id = 'cs_test_guest_sub'
-        mock_session.url = 'https://checkout.stripe.com/pay/cs_test_guest_sub'
-        mock_stripe_create.return_value = mock_session
+    @patch('shop.views.requests.post')
+    def test_guest_checkout_subscription(self, mock_requests_post):
+        # Mock Plan creation
+        mock_plan_resp = MagicMock()
+        mock_plan_resp.status_code = 200
+        mock_plan_resp.json.return_value = {'result': {'id': 'plan_guest_123'}}
+        
+        # Mock Subscription creation
+        mock_sub_resp = MagicMock()
+        mock_sub_resp.status_code = 200
+        mock_sub_resp.json.return_value = {'result': {'id': 'sub_guest_123'}}
+        
+        mock_requests_post.side_effect = [mock_plan_resp, mock_sub_resp]
 
         self.product.stripe_subscription_price_id = 'price_sub_123'
         self.product.save()

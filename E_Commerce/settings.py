@@ -199,12 +199,13 @@ EMAIL_HOST_PASSWORD = config("EMAIL_PASS")
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 ADMIN_EMAIL = config("ADMIN_EMAIL")
 
-STRIPE_PUBLIC_KEY = config('STRIPE_PUBLIC_KEY', default='pk_test_...')
-STRIPE_SECRET_KEY = config('STRIPE_SECRET_KEY', default='sk_test_...')
-STRIPE_WEBHOOK_SECRET = config('STRIPE_WEBHOOK_SECRET', default='whsec_...')
+NOWPAYMENTS_API_KEY = config('NOWPAYMENTS_API_KEY', default='placeholder_api_key')
+NOWPAYMENTS_IPN_SECRET = config('NOWPAYMENTS_IPN_SECRET', default='placeholder_ipn_secret')
+NOWPAYMENTS_API_URL = "https://api.nowpayments.io/v1/"
+NOWPAYMENTS_PAY_CURRENCY = config('NOWPAYMENTS_PAY_CURRENCY', default='aud')
 
-STRIPE_SUCCESS_URL = config('STRIPE_SUCCESS_URL')
-STRIPE_CANCEL_URL = config('STRIPE_CANCEL_URL')
+NOWPAYMENTS_SUCCESS_URL = config('NOWPAYMENTS_SUCCESS_URL', default='https://example.com/success')
+NOWPAYMENTS_CANCEL_URL = config('NOWPAYMENTS_CANCEL_URL', default='https://example.com/cancel')
 FRONTEND_URL = config('FRONTEND_URL')
 
 

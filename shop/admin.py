@@ -19,7 +19,7 @@ class TypeAdmin(admin.ModelAdmin):
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ('id', 'name', 'category', 'type', 'initial_price', 'discounted_price', 'color_code', 'size', 'order_count', 'stripe_one_time_price_id', 'stripe_subscription_price_id', 'created_at')
+    list_display = ('id', 'name', 'category', 'type', 'initial_price', 'discounted_price', 'color_code', 'size', 'order_count', 'nowpayments_product_id', 'created_at')
     list_filter = ('category', 'type', 'size', 'created_at')
     search_fields = ('name', 'description')
     readonly_fields = ('order_count',)
@@ -48,7 +48,7 @@ class OrderAddressInline(admin.StackedInline):
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
-    list_display = ('id', 'user', 'total_price', 'status', 'is_paid', 'stripe_checkout_session_id', 'created_at')
+    list_display = ('id', 'user', 'total_price', 'status', 'is_paid', 'nowpayments_payment_id', 'created_at')
     list_filter = ('status', 'is_paid', 'created_at')
     search_fields = ('user__username',)
     inlines = [OrderItemInline, OrderAddressInline]
