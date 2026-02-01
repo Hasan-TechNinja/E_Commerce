@@ -100,9 +100,11 @@ class GuestCheckoutSerializer(serializers.Serializer):
     email = serializers.EmailField()
     free_tshirt_size = serializers.ChoiceField(choices=['S', 'M', 'L', 'XL', 'XXL'], required=False)
     is_subscription = serializers.BooleanField(default=False)
+    apply_extra_charge = serializers.BooleanField(default=False)
 
 
 class AuthenticatedCheckoutSerializer(serializers.Serializer):
     address = CheckoutAddressSerializer()
     free_tshirt_size = serializers.ChoiceField(choices=['S', 'M', 'L', 'XL', 'XXL'], required=False)
     is_subscription = serializers.BooleanField(default=False)
+    apply_extra_charge = serializers.BooleanField(default=False)

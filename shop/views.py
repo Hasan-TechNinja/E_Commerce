@@ -186,6 +186,7 @@ class CheckoutView(APIView):
         address_data = validated_data['address']
         free_tshirt_size = validated_data.get('free_tshirt_size')
         is_subscription = validated_data.get('is_subscription', False)
+        apply_extra_charge = validated_data.get('apply_extra_charge', False)
 
         # Prepare Cart Items and User
         if request.user and request.user.is_authenticated:
@@ -216,6 +217,7 @@ class CheckoutView(APIView):
         # Calculate totals
         total_price = sum(item.product.discounted_price * item.quantity for item in cart_items)
         shipping_fee = decimal.Decimal('50.00')
+        extra_charge = decimal.Decimal('10.00') if apply_extra_charge else decimal.Decimal('0.00')
 
         # Free T-shirt eligibility check
         eligible_for_free_tshirt = total_price >= decimal.Decimal('1500.00')
@@ -230,6 +232,7 @@ class CheckoutView(APIView):
                     email=customer_email,
                     total_price=total_price,
                     shipping_fee=shipping_fee,
+                    extra_charge=extra_charge,
                     status='Pending',
                     is_paid=False
                 )
@@ -280,7 +283,7 @@ class CheckoutView(APIView):
                     try:
                         # 1. Create a Plan for this order total
                         plan_payload = {
-                            "amount": float(total_price + shipping_fee),
+                            "amount": float(total_price + shipping_fee + extra_charge),
                             "currency": settings.NOWPAYMENTS_PAY_CURRENCY.lower(),
                             "interval_day": 30,
                             "title": f"Subscription for Order #{order.id}"
@@ -318,7 +321,7 @@ class CheckoutView(APIView):
                 else:
                     # One-time Payment logic
                     now_payload = {
-                        "price_amount": float(total_price + shipping_fee),
+                        "price_amount": float(total_price + shipping_fee + extra_charge),
                         "price_currency": settings.NOWPAYMENTS_PAY_CURRENCY,   # e.g. "AUD"
                         "order_id": str(order.id),
                         "order_description": f"Order #{order.id} for {customer_email}",
@@ -501,7 +504,7 @@ class NOWPaymentsIPNView(APIView):
             except Exception:
                 ipn_amount = None
 
-            expected_total = (order.total_price + order.shipping_fee).quantize(Decimal('0.01'))
+            expected_total = (order.total_price + order.shipping_fee + order.extra_charge).quantize(Decimal('0.01'))
 
             if ipn_amount is None or ipn_amount != expected_total or (price_currency or '').upper() != settings.NOWPAYMENTS_PAY_CURRENCY:
                 print("IPN amount/currency mismatch", {"order": order.id, "ipn_amount": ipn_amount, "expected": expected_total, "ipn_currency": price_currency})

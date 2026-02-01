@@ -83,6 +83,42 @@ class CheckoutViewTests(TestCase):
         self.assertEqual(response.data['checkout_url'], 'https://nowpayments.io/payment?id=test_payment_123')
 
     @patch('shop.views.requests.post')
+    def test_checkout_with_extra_charge(self, mock_nowpayments_post):
+        # Mock NOWPayments Invoice Response
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            'invoice_url': 'https://nowpayments.io/payment?id=extra_charge_123',
+            'id': 'extra_charge_123'
+        }
+        mock_nowpayments_post.return_value = mock_response
+
+        CartItem.objects.create(user=self.user, product=self.product, quantity=2)
+        
+        data = {
+            'address': {
+                'name': 'Test User',
+                'phone': '1234567890',
+                'address': '123 Test St',
+                'type': 'home'
+            },
+            'apply_extra_charge': True,
+            'free_tshirt_size': 'M'
+        }
+        
+        response = self.client.post(self.url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        order = Order.objects.first()
+        self.assertEqual(order.extra_charge, 10.00)
+        
+        # Verify the amount sent to NOWPayments
+        args, kwargs = mock_nowpayments_post.call_args
+        payload = kwargs.get('json')
+        # total = 90*2 (subtotal) + 50 (shipping) + 10 (extra) = 240
+        self.assertEqual(payload['price_amount'], 240.0)
+
+    @patch('shop.views.requests.post')
     def test_checkout_subscription_success(self, mock_requests_post):
         # Mock Plan creation
         mock_plan_resp = MagicMock()
