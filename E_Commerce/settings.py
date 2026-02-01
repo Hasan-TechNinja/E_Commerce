@@ -199,14 +199,24 @@ EMAIL_HOST_PASSWORD = config("EMAIL_PASS")
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 ADMIN_EMAIL = config("ADMIN_EMAIL")
 
-NOWPAYMENTS_API_KEY = config('NOWPAYMENTS_API_KEY', default='placeholder_api_key')
-NOWPAYMENTS_IPN_SECRET = config('NOWPAYMENTS_IPN_SECRET', default='placeholder_ipn_secret')
-NOWPAYMENTS_API_URL = "https://api.nowpayments.io/v1/"
-NOWPAYMENTS_PAY_CURRENCY = config('NOWPAYMENTS_PAY_CURRENCY', default='aud')
+# NOWPayments Configuration
+NOWPAYMENTS_API_KEY = config('NOWPAYMENTS_API_KEY', default='')
+NOWPAYMENTS_IPN_SECRET = config('NOWPAYMENTS_IPN_SECRET', default='')
+NOWPAYMENTS_API_URL = config('NOWPAYMENTS_API_URL', default='https://api.nowpayments.io/v1/')
+NOWPAYMENTS_PAY_CURRENCY = config('NOWPAYMENTS_PAY_CURRENCY', default='AUD')
+NOWPAYMENTS_USE_SANDBOX = config('NOWPAYMENTS_USE_SANDBOX', default=False, cast=bool)
 
-NOWPAYMENTS_SUCCESS_URL = config('NOWPAYMENTS_SUCCESS_URL', default='https://example.com/success')
-NOWPAYMENTS_CANCEL_URL = config('NOWPAYMENTS_CANCEL_URL', default='https://example.com/cancel')
-FRONTEND_URL = config('FRONTEND_URL')
+# Frontend & Redirect URLs
+FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:5173')
+NOWPAYMENTS_SUCCESS_URL = config('NOWPAYMENTS_SUCCESS_URL', default='order-history')
+NOWPAYMENTS_CANCEL_URL = config('NOWPAYMENTS_CANCEL_URL', default='cart')
+
+# Email & Admin
+EMAIL_HOST_USER = config("EMAIL_USER", default='')
+EMAIL_HOST_PASSWORD = config("EMAIL_PASS", default='')
+DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default=EMAIL_HOST_USER)
+ADMIN_EMAIL = config("ADMIN_EMAIL", default=DEFAULT_FROM_EMAIL)
+
 
 
 REST_FRAMEWORK = {

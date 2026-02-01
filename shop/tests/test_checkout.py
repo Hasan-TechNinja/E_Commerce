@@ -130,7 +130,8 @@ class CheckoutViewTests(TestCase):
         data = {
             'payment_status': 'finished',
             'order_id': order.id,
-            'price_amount': 150.0 # total_price + shipping
+            'price_amount': 150.0,
+            'price_currency': 'AUD'
         }
 
         import hmac

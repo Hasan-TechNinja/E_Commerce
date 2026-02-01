@@ -39,7 +39,8 @@ class OrderStatusFlowTest(TestCase):
         payload = {
             'payment_status': 'finished',
             'order_id': order.id,
-            'price_amount': 190.0
+            'price_amount': 190.0,
+            'price_currency': 'AUD'
         }
         
         import hmac

@@ -1,4 +1,5 @@
 from django.shortcuts import render
+from django.urls import reverse
 from . models import CartItem, ContactMessage, Product, Review, Order, OrderItem, OrderAddress, Type, UserSubscription
 from django.contrib.auth.models import User
 from . serializers import CartItemSerializer, ProductSerializer, ReviewSerializer, OrderSerializer, TypeSerializer, UserSubscriptionSerializer, GuestCheckoutSerializer, AuthenticatedCheckoutSerializer
@@ -16,6 +17,9 @@ from django.core.mail import send_mail
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.utils import timezone
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -262,11 +266,13 @@ class CheckoutView(APIView):
                 frontend_url = settings.FRONTEND_URL.rstrip('/')
                 success_url = f"{frontend_url}/{settings.NOWPAYMENTS_SUCCESS_URL.lstrip('/')}"
                 cancel_url = f"{frontend_url}/{settings.NOWPAYMENTS_CANCEL_URL.lstrip('/')}"
-                
+                ipn_callback = request.build_absolute_uri(reverse('nowpayments-ipn'))
+
                 now_headers = {
                     "x-api-key": settings.NOWPAYMENTS_API_KEY,
                     "Content-Type": "application/json"
                 }
+                api_base = settings.NOWPAYMENTS_API_URL.rstrip('/') + '/v1/'
 
                 if is_subscription:
                     # NOWPayments Recurring Payment logic
@@ -280,7 +286,7 @@ class CheckoutView(APIView):
                             "title": f"Subscription for Order #{order.id}"
                         }
                         plan_response = requests.post(
-                            f"{settings.NOWPAYMENTS_API_URL}subscriptions/plans",
+                            f"{api_base}subscriptions/plans",
                             json=plan_payload,
                             headers=now_headers
                         )
@@ -294,63 +300,45 @@ class CheckoutView(APIView):
                             "email": customer_email
                         }
                         sub_response = requests.post(
-                            f"{settings.NOWPAYMENTS_API_URL}subscriptions",
+                            f"{api_base}subscriptions",
                             json=sub_payload,
                             headers=now_headers
                         )
                         sub_response.raise_for_status()
                         sub_data = sub_response.json()
                         payment_id = sub_data.get('result', {}).get('id') or sub_data.get('id')
-                        
-                        # For subscriptions, NOWPayments sends an email. 
-                        # We'll redirect to a "Subscription Started" page on the frontend.
+                        # For now, subscriptions don't have a direct checkout URL like invoices, 
+                        # so we redirect to the success page as indicated by tests.
                         checkout_url = success_url
-                        
-                        # Save Subscription info
-                        for item in cart_items:
-                            if item.product: # Skip free items for subscription record
-                                UserSubscription.objects.create(
-                                    user=order_user,
-                                    email=customer_email,
-                                    product=item.product,
-                                    quantity=item.quantity,
-                                    nowpayments_subscription_id=payment_id,
-                                    status='Active'
-                                )
-                    except Exception as e:
-                        print(f"NOWPayments Recurring API Error: {e}")
-                        checkout_url = f"https://nowpayments.io/subscription?id=dummy_{order.id}"
-                        payment_id = f"sub_dummy_{order.id}"
+
+                    except requests.RequestException as e:
+                        logger.error(f"NOWPayments API Error: {e}")
+                        return Response({"error": "Payment processing failed. Please try again later."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
                 else:
                     # One-time Payment logic
                     now_payload = {
                         "price_amount": float(total_price + shipping_fee),
-                        "price_currency": settings.NOWPAYMENTS_PAY_CURRENCY,
+                        "price_currency": settings.NOWPAYMENTS_PAY_CURRENCY,   # e.g. "AUD"
                         "order_id": str(order.id),
                         "order_description": f"Order #{order.id} for {customer_email}",
-                        "ipn_callback_url": request.build_absolute_uri('/shop/nowpayments/ipn/'),
+                        "ipn_callback_url": ipn_callback,
                         "success_url": success_url,
                         "cancel_url": cancel_url,
                     }
 
                     try:
-                        now_response = requests.post(
-                            f"{settings.NOWPAYMENTS_API_URL}invoice",
-                            json=now_payload,
-                            headers=now_headers
-                        )
+                        now_response = requests.post(f"{api_base}invoice", json=now_payload, headers=now_headers, timeout=15)
                         now_response.raise_for_status()
                         now_data = now_response.json()
-                        checkout_url = now_data.get('invoice_url')
-                        payment_id = now_data.get('id')
-                    except Exception as e:
-                        # In case of API failure, we'll use a dummy URL
-                        checkout_url = f"https://nowpayments.io/payment?id=dummy_{order.id}"
-                        payment_id = f"dummy_{order.id}"
-                        print(f"NOWPayments API Error: {e}")
+                        checkout_url = now_data.get('invoice_url') or now_data.get('data', {}).get('invoice_url')
+                        payment_id = now_data.get('id') or now_data.get('data', {}).get('id')
+                    except requests.RequestException as e:
+                        logger.error(f"NOWPayments API Error: {e}")
+                        return Response({"error": "Payment processing failed. Please try again later."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-                order.nowpayments_payment_id = payment_id
-                order.save()
+                    order.nowpayments_payment_id = payment_id
+                    order.save(update_fields=['nowpayments_payment_id'])
 
                 # Clear server cart only for authenticated users
                 if clear_server_cart and request.user and request.user.is_authenticated:
@@ -360,68 +348,176 @@ class CheckoutView(APIView):
                 return Response({'order': serializer.data, 'checkout_url': checkout_url}, status=status.HTTP_201_CREATED)
 
         except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            logger.exception("An unexpected error occurred during checkout.")
+            return Response({"error": "An unexpected error occurred. Please try again later."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
+# @method_decorator(csrf_exempt, name='dispatch')
+# class NOWPaymentsIPNView(APIView):
+#     permission_classes = [permissions.AllowAny]
+
+#     def post(self, request):
+#         sig_header = request.META.get('HTTP_X_NOWPAYMENTS_SIG')
+#         if not sig_header:
+#             return Response({"error": "No signature"}, status=status.HTTP_400_BAD_REQUEST)
+
+#         # NOWPayments IPN Authentication
+#         import hmac
+#         import hashlib
+#         import json
+
+#         ipn_secret = settings.NOWPAYMENTS_IPN_SECRET
+#         if not ipn_secret:
+#             return Response({"error": "IPN secret not configured"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+#         # Verification logic: Sort keys alphabetically and sign
+#         data = request.data
+#         sorted_data = dict(sorted(data.items()))
+#         data_string = json.dumps(sorted_data, separators=(',', ':'))
+        
+#         calculated_sig = hmac.new(
+#             ipn_secret.encode('utf-8'),
+#             data_string.encode('utf-8'),
+#             hashlib.sha512
+#         ).hexdigest()
+
+#         # Note: If the above doesn't work, it might be the raw body. 
+#         # But per documentation, sorting is the standard.
+#         # We'll log the result for debugging if needed.
+#         if calculated_sig != sig_header:
+#             print(f"IPN Signature Verification Failed. Expected {sig_header}, got {calculated_sig}")
+#             # return Response({"error": "Invalid signature"}, status=status.HTTP_400_BAD_REQUEST)
+
+#         payment_status = data.get('payment_status')
+#         order_id = data.get('order_id')
+        
+#         # Check if it's a recurring payment (might have subscription_id)
+#         subscription_id = data.get('subscription_id')
+
+#         if payment_status == 'finished':
+#             if order_id:
+#                 try:
+#                     order = Order.objects.get(id=order_id)
+#                     if not order.is_paid:
+#                         order.is_paid = True
+#                         order.status = 'Processing'
+#                         order.save()
+                        
+#                         # Send confirmation emails
+#                         self.send_order_emails(order)
+#                 except Order.DoesNotExist:
+#                     print(f"Order #{order_id} not found for IPN")
+            
+#             if subscription_id:
+#                 # Update all subscriptions tied to this payment
+#                 UserSubscription.objects.filter(nowpayments_subscription_id=subscription_id).update(status='Active')
+
+#         return Response(status=status.HTTP_200_OK)
+
+#     def send_order_emails(self, order):
+#         try:
+#             from_email = settings.DEFAULT_FROM_EMAIL
+#             customer_email = order.email
+#             items = order.items.all()
+#             lines = [f"Thank you for your order #{order.id}."]
+#             lines.append(f"Total: {order.total_price}")
+#             lines.append("Items:")
+#             for it in items:
+#                 prod_name = it.product.name if it.product else 'Free item'
+#                 lines.append(f"- {prod_name} x{it.quantity} @ {it.price}")
+#             lines.append(f"Shipping Fee: {order.shipping_fee}")
+#             lines.append(f"Status: {order.status}")
+#             body = "\n".join(lines)
+#             subject = f"Order Confirmation - Order #{order.id}"
+#             send_mail(subject, body, from_email, [customer_email], fail_silently=True)
+            
+#             admin_email = getattr(settings, 'ADMIN_EMAIL', None) or from_email
+#             admin_subject = f"New Order Paid - #{order.id}"
+#             admin_body = f"Order {order.id} has been paid via NOWPayments.\n\n" + body
+#             send_mail(admin_subject, admin_body, from_email, [admin_email], fail_silently=True)
+#         except Exception as e:
+#             print(f"Error sending order confirmation emails: {e}")
+
+
+# views.py (excerpt) — improved IPN verification
+import hmac, hashlib, json
+from django.views.decorators.csrf import csrf_exempt
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
 
 @method_decorator(csrf_exempt, name='dispatch')
 class NOWPaymentsIPNView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
-        sig_header = request.META.get('HTTP_X_NOWPAYMENTS_SIG')
+        sig_header = request.META.get('HTTP_X_NOWPAYMENTS_SIG') or request.META.get('HTTP_X_NOWPAYMENTS_SIG'.lower())
         if not sig_header:
             return Response({"error": "No signature"}, status=status.HTTP_400_BAD_REQUEST)
-
-        # NOWPayments IPN Authentication
-        import hmac
-        import hashlib
-        import json
 
         ipn_secret = settings.NOWPAYMENTS_IPN_SECRET
         if not ipn_secret:
             return Response({"error": "IPN secret not configured"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        # Verification logic: Sort keys alphabetically and sign
-        data = request.data
-        sorted_data = dict(sorted(data.items()))
-        data_string = json.dumps(sorted_data, separators=(',', ':'))
-        
+        # Use raw body for canonical representation
+        try:
+            # parse JSON body once
+            payload = json.loads(request.body.decode('utf-8') or "{}")
+        except Exception:
+            return Response({"error": "Invalid JSON"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Create canonical string: JSON with keys sorted and no spaces
+        canonical = json.dumps({k: payload[k] for k in sorted(payload.keys())}, separators=(',', ':'))
+
         calculated_sig = hmac.new(
             ipn_secret.encode('utf-8'),
-            data_string.encode('utf-8'),
+            canonical.encode('utf-8'),
             hashlib.sha512
         ).hexdigest()
 
-        # Note: If the above doesn't work, it might be the raw body. 
-        # But per documentation, sorting is the standard.
-        # We'll log the result for debugging if needed.
-        if calculated_sig != sig_header:
-            print(f"IPN Signature Verification Failed. Expected {sig_header}, got {calculated_sig}")
-            # return Response({"error": "Invalid signature"}, status=status.HTTP_400_BAD_REQUEST)
+        if not hmac.compare_digest(calculated_sig, sig_header):
+            # Log for debugging. Do NOT mark as paid.
+            print("NOWPayments IPN signature mismatch", {"expected": sig_header, "got": calculated_sig, "payload": payload})
+            return Response({"error": "Invalid signature"}, status=status.HTTP_400_BAD_REQUEST)
 
-        payment_status = data.get('payment_status')
-        order_id = data.get('order_id')
-        
-        # Check if it's a recurring payment (might have subscription_id)
-        subscription_id = data.get('subscription_id')
+        # At this point signature is valid. Now do business checks:
+        payment_status = payload.get('payment_status')
+        order_id = payload.get('order_id')
+        price_amount = payload.get('price_amount')
+        price_currency = payload.get('price_currency')
 
-        if payment_status == 'finished':
-            if order_id:
-                try:
-                    order = Order.objects.get(id=order_id)
-                    if not order.is_paid:
-                        order.is_paid = True
-                        order.status = 'Processing'
-                        order.save()
-                        
-                        # Send confirmation emails
-                        self.send_order_emails(order)
-                except Order.DoesNotExist:
-                    print(f"Order #{order_id} not found for IPN")
-            
-            if subscription_id:
-                # Update all subscriptions tied to this payment
-                UserSubscription.objects.filter(nowpayments_subscription_id=subscription_id).update(status='Active')
+        if order_id:
+            try:
+                order = Order.objects.get(id=order_id)
+            except Order.DoesNotExist:
+                print("IPN: unknown order", order_id)
+                return Response(status=status.HTTP_200_OK)  # return 200 so NOWPayments won't retry forever
+
+            # Validate amount and currency to avoid spoofing
+            # Note: price_amount is a string or number from provider; convert to Decimal
+            try:
+                from decimal import Decimal
+                ipn_amount = Decimal(str(price_amount))
+            except Exception:
+                ipn_amount = None
+
+            expected_total = (order.total_price + order.shipping_fee).quantize(Decimal('0.01'))
+
+            if ipn_amount is None or ipn_amount != expected_total or (price_currency or '').upper() != settings.NOWPAYMENTS_PAY_CURRENCY:
+                print("IPN amount/currency mismatch", {"order": order.id, "ipn_amount": ipn_amount, "expected": expected_total, "ipn_currency": price_currency})
+                # still return 200 (but do not mark as paid)
+                return Response(status=status.HTTP_200_OK)
+
+            if payment_status == 'finished' and not order.is_paid:
+                order.is_paid = True
+                order.status = 'Processing'
+                order.save()
+                self.send_order_emails(order)
+
+        # handle subscription events
+        subscription_id = payload.get('subscription_id')
+        if subscription_id:
+            UserSubscription.objects.filter(nowpayments_subscription_id=subscription_id).update(status='Active')
 
         return Response(status=status.HTTP_200_OK)
 
@@ -447,7 +543,7 @@ class NOWPaymentsIPNView(APIView):
             admin_body = f"Order {order.id} has been paid via NOWPayments.\n\n" + body
             send_mail(admin_subject, admin_body, from_email, [admin_email], fail_silently=True)
         except Exception as e:
-            print(f"Error sending order confirmation emails: {e}")
+            logger.error(f"Error sending order confirmation emails: {e}")
 
 
 
