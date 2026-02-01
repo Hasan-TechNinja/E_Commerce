@@ -173,7 +173,7 @@ class CheckoutView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
-        # Determine which serializer to use
+        # Determine which serializer to use and validate
         if request.user and request.user.is_authenticated:
             serializer = AuthenticatedCheckoutSerializer(data=request.data)
         else:
@@ -193,7 +193,7 @@ class CheckoutView(APIView):
             server_cart_qs = CartItem.objects.filter(user=request.user)
             if not server_cart_qs.exists():
                 return Response({"error": "Cart is empty"}, status=status.HTTP_400_BAD_REQUEST)
-            cart_items = list(server_cart_qs) # Evaluate to list to avoid issues if QS is deleted later
+            cart_items = list(server_cart_qs)  # Evaluate to list to avoid issues if QS is deleted later
             clear_server_cart = True
             order_user = request.user
             customer_email = request.user.email
@@ -208,7 +208,7 @@ class CheckoutView(APIView):
                     built_items.append(SimpleNamespace(product=product, quantity=ci['quantity']))
             except Product.DoesNotExist:
                 return Response({"error": "One or more products in cart_items not found"}, status=status.HTTP_404_NOT_FOUND)
-            
+
             cart_items = built_items
             clear_server_cart = False
             order_user = None
@@ -223,8 +223,8 @@ class CheckoutView(APIView):
         eligible_for_free_tshirt = total_price >= decimal.Decimal('1500.00')
         if eligible_for_free_tshirt:
             if not free_tshirt_size:
-                 return Response({"error": "You are eligible for a free T-shirt! Please select your T-shirt size (S, L, M, XL, XXL)."}, status=status.HTTP_400_BAD_REQUEST)
-        
+                return Response({"error": "You are eligible for a free T-shirt! Please select your T-shirt size (S, L, M, XL, XXL)."}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
             with transaction.atomic():
                 order = Order.objects.create(
@@ -310,8 +310,6 @@ class CheckoutView(APIView):
                         sub_response.raise_for_status()
                         sub_data = sub_response.json()
                         payment_id = sub_data.get('result', {}).get('id') or sub_data.get('id')
-                        # For now, subscriptions don't have a direct checkout URL like invoices, 
-                        # so we redirect to the success page as indicated by tests.
                         checkout_url = success_url
 
                     except requests.RequestException as e:
