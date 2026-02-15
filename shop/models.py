@@ -149,6 +149,8 @@ class OrderItem(models.Model):
     ordered_color_name = models.CharField(max_length=50, blank=True, null=True)
     is_free_item = models.BooleanField(default=False)
     free_item_size = models.CharField(max_length=3, choices=[('S', 'S'), ('L', 'L'), ('M', 'M'), ('XL', 'XL'), ('XXL', 'XXL')], blank=True, null=True)
+    # Tracks whether stock was adjusted for this order item
+    stock_adjusted = models.BooleanField(default=False)
 
     def __str__(self):
         if self.is_free_item:
