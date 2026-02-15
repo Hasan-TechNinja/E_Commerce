@@ -19,6 +19,13 @@ PRODUCT_SIZE_CHOICES = [
 ]
 
 
+STOCK_STATUS_CHOICES = [
+    ('in_stock', 'In Stock'),
+    ('out_of_stock', 'Out of Stock'),
+    ('coming_soon', 'Coming Soon'),
+]
+
+
 class Type(models.Model):
     name = models.CharField(max_length=100)
 
@@ -45,8 +52,33 @@ class Product(models.Model):
     color_code = models.CharField(max_length=500, blank=True, null=True)  # Deprecated - use available_colors
     nowpayments_product_id = models.CharField(max_length=100, blank=True, null=True)
 
+    # Stock management
+    stock_quantity = models.IntegerField(default=0)
+    stock_status = models.CharField(max_length=20, choices=STOCK_STATUS_CHOICES, default='in_stock')
+
     def __str__(self):
         return self.name
+
+    @property
+    def is_in_stock(self):
+        try:
+            return self.stock_status == 'in_stock' and self.stock_quantity > 0
+        except Exception:
+            return False
+
+    @property
+    def is_out_of_stock(self):
+        try:
+            return self.stock_status == 'out_of_stock' or self.stock_quantity <= 0
+        except Exception:
+            return False
+
+    @property
+    def is_coming_soon(self):
+        try:
+            return self.stock_status == 'coming_soon'
+        except Exception:
+            return False
     
 
 class ProductImage(models.Model):
