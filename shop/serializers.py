@@ -37,9 +37,24 @@ class ProductSerializer(serializers.ModelSerializer):
     type = TypeSerializer()
     images = ProductImageSerializer(many=True, read_only=True)
     reviews = ReviewSerializer(many=True, read_only=True)
+    stock_quantity = serializers.IntegerField(read_only=True)
+    stock_status = serializers.CharField(read_only=True)
+    is_in_stock = serializers.SerializerMethodField()
+    is_out_of_stock = serializers.SerializerMethodField()
+    is_coming_soon = serializers.SerializerMethodField()
     class Meta:
         model = Product
         fields = '__all__'
+
+    def get_is_in_stock(self, obj):
+        return getattr(obj, 'is_in_stock', False)
+
+    def get_is_out_of_stock(self, obj):
+        return getattr(obj, 'is_out_of_stock', False)
+
+    def get_is_coming_soon(self, obj):
+        return getattr(obj, 'is_coming_soon', False)
+
 
 class CartItemSerializer(serializers.ModelSerializer):
     product = ProductSerializer()
@@ -100,9 +115,11 @@ class GuestCheckoutSerializer(serializers.Serializer):
     email = serializers.EmailField()
     free_tshirt_size = serializers.ChoiceField(choices=['S', 'M', 'L', 'XL', 'XXL'], required=False)
     is_subscription = serializers.BooleanField(default=False)
+    apply_extra_charge = serializers.BooleanField(default=False)
 
 
 class AuthenticatedCheckoutSerializer(serializers.Serializer):
     address = CheckoutAddressSerializer()
     free_tshirt_size = serializers.ChoiceField(choices=['S', 'M', 'L', 'XL', 'XXL'], required=False)
     is_subscription = serializers.BooleanField(default=False)
+    apply_extra_charge = serializers.BooleanField(default=False)

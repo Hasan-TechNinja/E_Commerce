@@ -84,6 +84,43 @@ class CheckoutViewTests(TestCase):
         self.assertTrue(kwargs['success_url'].endswith(settings.STRIPE_SUCCESS_URL))
 
     @patch('shop.views.stripe.checkout.Session.create')
+    def test_checkout_with_extra_charge(self, mock_stripe_create):
+        """Test that checkout with apply_extra_charge=True adds $10.00 extra charge"""
+        mock_session = MagicMock()
+        mock_session.id = 'cs_test_extra_charge'
+        mock_session.url = 'https://checkout.stripe.com/pay/cs_test_extra_charge'
+        mock_stripe_create.return_value = mock_session
+
+        CartItem.objects.create(user=self.user, product=self.product, quantity=1)
+
+        data = {
+            'address': {
+                'name': 'Test User',
+                'phone': '1234567890',
+                'address': '123 Test St',
+                'type': 'home'
+            },
+            'apply_extra_charge': True,
+            'free_tshirt_size': 'M'
+        }
+
+        response = self.client.post(self.url, data, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        order = Order.objects.latest('id')
+        self.assertEqual(order.extra_charge, 10.00)
+        
+        # Verify Stripe line items
+        _, kwargs = mock_stripe_create.call_args
+        line_items = kwargs['line_items']
+        
+        # Check if "Extra Charge" is in line items
+        extra_charge_item = next((item for item in line_items if item.get('price_data', {}).get('product_data', {}).get('name') == 'Extra Charge'), None)
+        self.assertIsNotNone(extra_charge_item)
+        self.assertEqual(extra_charge_item['price_data']['unit_amount'], 1000)
+
+
+    @patch('shop.views.stripe.checkout.Session.create')
     def test_checkout_subscription_success(self, mock_stripe_create):
         # Mock Stripe Session
         mock_session = MagicMock()

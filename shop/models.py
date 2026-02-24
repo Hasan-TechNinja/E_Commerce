@@ -19,6 +19,13 @@ PRODUCT_SIZE_CHOICES = [
 ]
 
 
+STOCK_STATUS_CHOICES = [
+    ('in_stock', 'In Stock'),
+    ('out_of_stock', 'Out of Stock'),
+    ('coming_soon', 'Coming Soon'),
+]
+
+
 class Type(models.Model):
     name = models.CharField(max_length=100)
 
@@ -46,8 +53,33 @@ class Product(models.Model):
     stripe_one_time_price_id = models.CharField(max_length=100, blank=True, null=True)
     stripe_subscription_price_id = models.CharField(max_length=100, blank=True, null=True)
 
+    # Stock management
+    stock_quantity = models.IntegerField(default=0)
+    stock_status = models.CharField(max_length=20, choices=STOCK_STATUS_CHOICES, default='in_stock')
+
     def __str__(self):
         return self.name
+    
+    @property
+    def is_in_stock(self):
+        try:
+            return self.stock_status == 'in_stock' and self.stock_quantity > 0
+        except Exception:
+            return False
+
+    @property
+    def is_out_of_stock(self):
+        try:
+            return self.stock_status == 'out_of_stock' or self.stock_quantity <= 0
+        except Exception:
+            return False
+
+    @property
+    def is_coming_soon(self):
+        try:
+            return self.stock_status == 'coming_soon'
+        except Exception:
+            return False
     
 
 class ProductImage(models.Model):
@@ -97,6 +129,7 @@ class Order(models.Model):
     email = models.EmailField(blank=True, null=True, help_text="Optional customer email for guest orders")
     total_price = models.DecimalField(max_digits=10, decimal_places=2)
     shipping_fee = models.DecimalField(max_digits=10, decimal_places=2)
+    extra_charge = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     status = models.CharField(max_length=20, choices=ORDER_STATUS_CHOICES, default='Pending')
     is_paid = models.BooleanField(default=False)
     stripe_checkout_session_id = models.CharField(max_length=255, blank=True, null=True)
@@ -117,6 +150,7 @@ class OrderItem(models.Model):
     ordered_color_name = models.CharField(max_length=50, blank=True, null=True)
     is_free_item = models.BooleanField(default=False)
     free_item_size = models.CharField(max_length=3, choices=[('S', 'S'), ('L', 'L'), ('M', 'M'), ('XL', 'XL'), ('XXL', 'XXL')], blank=True, null=True)
+    stock_adjusted = models.BooleanField(default=False)
 
     def __str__(self):
         if self.is_free_item:

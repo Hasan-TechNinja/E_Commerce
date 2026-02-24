@@ -183,6 +183,7 @@ class CheckoutView(APIView):
         address_data = validated_data['address']
         free_tshirt_size = validated_data.get('free_tshirt_size')
         is_subscription = validated_data.get('is_subscription', False)
+        apply_extra_charge = validated_data.get('apply_extra_charge', False)
 
         # Prepare Cart Items and User
         if request.user and request.user.is_authenticated:
@@ -213,6 +214,7 @@ class CheckoutView(APIView):
         # Calculate totals
         total_price = sum(item.product.discounted_price * item.quantity for item in cart_items)
         shipping_fee = decimal.Decimal('50.00')
+        extra_charge = decimal.Decimal('10.00') if apply_extra_charge else decimal.Decimal('0.00')
 
         # Free T-shirt eligibility check
         eligible_for_free_tshirt = total_price >= decimal.Decimal('1500.00')
@@ -227,6 +229,7 @@ class CheckoutView(APIView):
                     email=customer_email,
                     total_price=total_price,
                     shipping_fee=shipping_fee,
+                    extra_charge=extra_charge,
                     status='Pending',
                     is_paid=False
                 )
@@ -292,7 +295,16 @@ class CheckoutView(APIView):
                         },
                         'quantity': 1,
                     })
-
+                
+                if extra_charge > 0:
+                    line_items.append({
+                        'price_data': {
+                            'currency': 'aud',
+                            'product_data': {'name': 'Extra Charge'},
+                            'unit_amount': int(extra_charge * 100),
+                        },
+                        'quantity': 1,
+                    })
                 frontend_url = settings.FRONTEND_URL
 
                 if request.user and request.user.is_authenticated:
