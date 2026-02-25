@@ -207,7 +207,7 @@ marimo/_lsp/
 __marimo__/
 media
 
-# # Ignore Django migrations
-# **/migrations/*.py
-# !**/migrations/__init__.py
-# migrations
+# Ignore Django migrations
+**/migrations/*.py
+!**/migrations/__init__.py
+migrations
