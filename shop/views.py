@@ -213,7 +213,7 @@ class CheckoutView(APIView):
 
         # Calculate totals
         total_price = sum(item.product.discounted_price * item.quantity for item in cart_items)
-        shipping_fee = decimal.Decimal('50.00')
+        shipping_fee = decimal.Decimal('1.00')
         extra_charge = decimal.Decimal('10.00') if apply_extra_charge else decimal.Decimal('0.00')
 
         # Free T-shirt eligibility check
