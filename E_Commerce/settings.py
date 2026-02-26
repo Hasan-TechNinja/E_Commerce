@@ -78,8 +78,6 @@ CORS_ALLOWED_ORIGINS = [
     'http://10.10.13.88:5173',
     'http://localhost:5175',
     'http://localhost:5173',
-    "https://server.boostedlabs.au",
-    "https://boostedlabs.au",  
     
 ]
 
