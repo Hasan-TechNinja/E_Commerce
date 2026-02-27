@@ -56,6 +56,7 @@ class Product(models.Model):
     # Stock management
     stock_quantity = models.IntegerField(default=0)
     stock_status = models.CharField(max_length=20, choices=STOCK_STATUS_CHOICES, default='in_stock')
+    reconstitute_pen = models.BooleanField(default=False)
 
     def __str__(self):
         return self.name
@@ -109,6 +110,7 @@ class CartItem(models.Model):
     selected_size = models.CharField(max_length=3, blank=True, null=True)
     selected_color_hex = models.CharField(max_length=7, blank=True, null=True)
     selected_color_name = models.CharField(max_length=50, blank=True, null=True)
+    reconstitute_pen = models.BooleanField(default=False)
     added_at = models.DateTimeField(auto_now_add=True, blank=True, null=True)
 
     def __str__(self):
@@ -148,6 +150,7 @@ class OrderItem(models.Model):
     ordered_size = models.CharField(max_length=3, blank=True, null=True)
     ordered_color_hex = models.CharField(max_length=7, blank=True, null=True)
     ordered_color_name = models.CharField(max_length=50, blank=True, null=True)
+    reconstitute_pen = models.BooleanField(default=False)
     is_free_item = models.BooleanField(default=False)
     free_item_size = models.CharField(max_length=3, choices=[('S', 'S'), ('L', 'L'), ('M', 'M'), ('XL', 'XL'), ('XXL', 'XXL')], blank=True, null=True)
     stock_adjusted = models.BooleanField(default=False)

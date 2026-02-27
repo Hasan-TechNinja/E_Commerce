@@ -77,9 +77,19 @@ class AddToCartView(APIView):
         if quantity < 1:
             return Response({"error": "Quantity must be at least 1"}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Handle reconstitute_pen
+        if product.reconstitute_pen:
+            reconstitute_pen_req = request.data.get('reconstitute_pen')
+            if reconstitute_pen_req is None:
+                return Response({"error": "reconstitute_pen status is required for this product"}, status=status.HTTP_400_BAD_REQUEST)
+            reconstitute_pen_status = str(reconstitute_pen_req).lower() == 'true'
+        else:
+            reconstitute_pen_status = False
+
         cart_item, created = CartItem.objects.get_or_create(
             user=request.user,
-            product=product
+            product=product,
+            reconstitute_pen=reconstitute_pen_status
         )
 
         if not created:
@@ -101,8 +111,9 @@ class CartView(APIView):
         serializer = CartItemSerializer(cart_items, many=True)
         
         subtotal = sum(item.product.discounted_price * item.quantity for item in cart_items)
+        extra_charge = sum(decimal.Decimal('10.00') * item.quantity for item in cart_items if item.reconstitute_pen)
         shipping_fee = decimal.Decimal('50.00') # Fixed shipping fee
-        total = subtotal + shipping_fee
+        total = subtotal + shipping_fee + extra_charge
         
         # Check if eligible for free T-shirt (subtotal <= 1500)
         eligible_for_free_tshirt = subtotal >= decimal.Decimal('1500.00') and cart_items.exists()
@@ -110,6 +121,7 @@ class CartView(APIView):
         return Response({
             'items': serializer.data,
             'subtotal': subtotal,
+            'extra_charge': extra_charge,
             'shipping_fee': shipping_fee,
             'total': total,
             'eligible_for_free_tshirt': eligible_for_free_tshirt
@@ -183,7 +195,6 @@ class CheckoutView(APIView):
         address_data = validated_data['address']
         free_tshirt_size = validated_data.get('free_tshirt_size')
         is_subscription = validated_data.get('is_subscription', False)
-        apply_extra_charge = validated_data.get('apply_extra_charge', False)
 
         # Prepare Cart Items and User
         if request.user and request.user.is_authenticated:
@@ -202,7 +213,7 @@ class CheckoutView(APIView):
             try:
                 for ci in cart_items_data:
                     product = Product.objects.get(pk=ci['product_id'])
-                    built_items.append(SimpleNamespace(product=product, quantity=ci['quantity']))
+                    built_items.append(SimpleNamespace(product=product, quantity=ci['quantity'], reconstitute_pen=ci.get('reconstitute_pen', False)))
             except Product.DoesNotExist:
                 return Response({"error": "One or more products in cart_items not found"}, status=status.HTTP_404_NOT_FOUND)
             
@@ -214,7 +225,7 @@ class CheckoutView(APIView):
         # Calculate totals
         total_price = sum(item.product.discounted_price * item.quantity for item in cart_items)
         shipping_fee = decimal.Decimal('50.00')
-        extra_charge = decimal.Decimal('10.00') if apply_extra_charge else decimal.Decimal('0.00')
+        extra_charge = sum(decimal.Decimal('10.00') * item.quantity for item in cart_items if getattr(item, 'reconstitute_pen', False))
 
         # Free T-shirt eligibility check
         eligible_for_free_tshirt = total_price >= decimal.Decimal('1500.00')
@@ -247,7 +258,8 @@ class CheckoutView(APIView):
                         order=order,
                         product=item.product,
                         price=item.product.discounted_price,
-                        quantity=item.quantity
+                        quantity=item.quantity,
+                        reconstitute_pen=getattr(item, 'reconstitute_pen', False)
                     )
                     item.product.order_count += item.quantity
                     item.product.save(update_fields=['order_count'])
@@ -300,7 +312,7 @@ class CheckoutView(APIView):
                     line_items.append({
                         'price_data': {
                             'currency': 'aud',
-                            'product_data': {'name': 'Extra Charge'},
+                            'product_data': {'name': 'Reconstitute Pen Charge'},
                             'unit_amount': int(extra_charge * 100),
                         },
                         'quantity': 1,

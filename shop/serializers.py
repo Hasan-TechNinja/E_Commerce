@@ -67,7 +67,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
     product = ProductSerializer(read_only=True)
     class Meta:
         model = OrderItem
-        fields = ['id', 'order', 'product', 'price', 'quantity', 'is_free_item', 'free_item_size']
+        fields = ['id', 'order', 'product', 'price', 'quantity', 'is_free_item', 'free_item_size', 'reconstitute_pen']
 
 
 class OrderAddressSerializer(serializers.ModelSerializer):
@@ -107,6 +107,7 @@ class CheckoutAddressSerializer(serializers.Serializer):
 class GuestCartItemSerializer(serializers.Serializer):
     product_id = serializers.IntegerField()
     quantity = serializers.IntegerField(min_value=1)
+    reconstitute_pen = serializers.BooleanField(default=False)
 
 
 class GuestCheckoutSerializer(serializers.Serializer):
@@ -115,11 +116,9 @@ class GuestCheckoutSerializer(serializers.Serializer):
     email = serializers.EmailField()
     free_tshirt_size = serializers.ChoiceField(choices=['S', 'M', 'L', 'XL', 'XXL'], required=False)
     is_subscription = serializers.BooleanField(default=False)
-    apply_extra_charge = serializers.BooleanField(default=False)
 
 
 class AuthenticatedCheckoutSerializer(serializers.Serializer):
     address = CheckoutAddressSerializer()
     free_tshirt_size = serializers.ChoiceField(choices=['S', 'M', 'L', 'XL', 'XXL'], required=False)
     is_subscription = serializers.BooleanField(default=False)
-    apply_extra_charge = serializers.BooleanField(default=False)
