@@ -112,7 +112,13 @@ class CartView(APIView):
         
         subtotal = sum(item.product.discounted_price * item.quantity for item in cart_items)
         extra_charge = sum(decimal.Decimal('10.00') * item.quantity for item in cart_items if item.reconstitute_pen)
-        shipping_fee = decimal.Decimal('50.00') # Fixed shipping fee
+        
+        # Free shipping if subtotal > 250
+        if subtotal > decimal.Decimal('250.00'):
+            shipping_fee = decimal.Decimal('0.00')
+        else:
+            shipping_fee = decimal.Decimal('50.00')
+
         total = subtotal + shipping_fee + extra_charge
         
         # Check if eligible for free T-shirt (subtotal <= 1500)
@@ -224,7 +230,13 @@ class CheckoutView(APIView):
 
         # Calculate totals
         total_price = sum(item.product.discounted_price * item.quantity for item in cart_items)
-        shipping_fee = decimal.Decimal('50.00')
+        
+        # Free shipping if total_price > 250
+        if total_price > decimal.Decimal('250.00'):
+            shipping_fee = decimal.Decimal('0.00')
+        else:
+            shipping_fee = decimal.Decimal('50.00')
+            
         extra_charge = sum(decimal.Decimal('10.00') * item.quantity for item in cart_items if getattr(item, 'reconstitute_pen', False))
 
         # Free T-shirt eligibility check
@@ -298,7 +310,7 @@ class CheckoutView(APIView):
                             'quantity': item.quantity,
                         })
 
-                if mode == 'payment':
+                if mode == 'payment' and shipping_fee > 0:
                     line_items.append({
                         'price_data': {
                             'currency': 'aud',
