@@ -228,6 +228,14 @@ class CheckoutView(APIView):
             order_user = None
             customer_email = validated_data['email']
 
+        # Validate Stock Quantity
+        for item in cart_items:
+            if getattr(item.product, 'stock_quantity', 0) < item.quantity:
+                return Response(
+                    {"error": f"Insufficient stock for '{item.product.name}'. Available: {item.product.stock_quantity}, Requested: {item.quantity}"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
         # Calculate totals
         total_price = sum(item.product.discounted_price * item.quantity for item in cart_items)
         
@@ -436,9 +444,25 @@ class StripeWebhookView(APIView):
                     order.is_paid = True
                     order.status = 'Processing'
                     order.save()
+                    
+                    # Deduct stock quantity
+                    for item in order.items.all():
+                        if item.product and not item.stock_adjusted:
+                            if item.product.stock_quantity >= item.quantity:
+                                item.product.stock_quantity -= item.quantity
+                            else:
+                                item.product.stock_quantity = 0 
+                            # Update stock status if zero
+                            if item.product.stock_quantity == 0:
+                                item.product.stock_status = 'out_of_stock'
+                            
+                            item.product.save()
+                            item.stock_adjusted = True
+                            item.save()
+
                     with open('/tmp/webhook_debug.log', 'a') as f:
-                         f.write(f"Order {order.id} status updated to Processing. is_paid=True\n")
-                    print(f"Order {order.id} marked as paid successfully")
+                         f.write(f"Order {order.id} status updated to Processing. is_paid=True. Stock adjusted.\n")
+                    print(f"Order {order.id} marked as paid successfully and stock adjusted")
 
                     # Send confirmation email to customer and notification to admin
                     try:
