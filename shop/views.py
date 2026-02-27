@@ -213,7 +213,7 @@ class CheckoutView(APIView):
 
         # Calculate totals
         total_price = sum(item.product.discounted_price * item.quantity for item in cart_items)
-        shipping_fee = decimal.Decimal('1.00')
+        shipping_fee = decimal.Decimal('50.00')
         extra_charge = decimal.Decimal('10.00') if apply_extra_charge else decimal.Decimal('0.00')
 
         # Free T-shirt eligibility check
@@ -342,6 +342,11 @@ class StripeWebhookView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
+        with open('/tmp/webhook_debug.log', 'a') as f:
+            import datetime
+            f.write(f"\n--- {datetime.datetime.now()} ---\n")
+            f.write(f"Webhook received. Request path: {request.path}\n")
+
         payload = request.body
         sig_header = request.META.get('HTTP_STRIPE_SIGNATURE')
         event = None
@@ -357,17 +362,62 @@ class StripeWebhookView(APIView):
 
         if event['type'] == 'checkout.session.completed':
             session = event['data']['object']
+            with open('/tmp/webhook_debug.log', 'a') as f:
+                 f.write(f"Processing checkout.session.completed for session {session.get('id')}\n")
+            session_id = session.get('id')
             order_id = session.get('client_reference_id')
+            # Stripe metadata values are always strings
+            metadata_order_id = session.get('metadata', {}).get('order_id')
             
+            # Try to find order by multiple means
+            order = None
             if order_id:
+                order = Order.objects.filter(id=order_id).first()
+            if not order and metadata_order_id:
+                order = Order.objects.filter(id=metadata_order_id).first()
+            if not order and session_id:
+                order = Order.objects.filter(stripe_checkout_session_id=session_id).first()
+
+            if order:
+                with open('/tmp/webhook_debug.log', 'a') as f:
+                    f.write(f"Order found: {order.id}. Current email in DB: {order.email}\n")
                 try:
-                    order = Order.objects.get(id=order_id)
+                    # Get email from multiple sources in the session
+                    stripe_email = session.get('customer_email') or session.get('customer_details', {}).get('email')
+                    
+                    # Determine the recipient customer email strictly based on User requirement:
+                    # "logged in user will get from user table and guest user will get from checkout time email address"
+                    if order.user:
+                        customer_email = order.user.email
+                    else:
+                        customer_email = order.email or stripe_email
+                    
+                    with open('/tmp/webhook_debug.log', 'a') as f:
+                        f.write(f"Processing paid order {order.id}. Email: {customer_email}\n")
+
+                    # Handle Guest to User conversion if needed
+                    # Only convert if order.user is currently None
+                    if not order.user and stripe_email:
+                        # Find or create user for this email
+                        user, created = User.objects.get_or_create(
+                            email=stripe_email,
+                            defaults={'username': stripe_email}
+                        )
+                        if created:
+                            user.set_unusable_password()
+                            user.save()
+                        
+                        order.user = user
+                    
                     order.is_paid = True
                     order.status = 'Processing'
                     order.save()
+                    with open('/tmp/webhook_debug.log', 'a') as f:
+                         f.write(f"Order {order.id} status updated to Processing. is_paid=True\n")
+                    print(f"Order {order.id} marked as paid successfully")
+
                     # Send confirmation email to customer and notification to admin
                     try:
-                        customer_email = order.email
                         from_email = settings.DEFAULT_FROM_EMAIL
 
                         # Build order summary
@@ -382,44 +432,63 @@ class StripeWebhookView(APIView):
                         lines.append(f"Status: {order.status}")
                         body = "\n".join(lines)
 
-                        subject = f"Order Confirmation - Order #{order.id}"
-                        send_mail(subject, body, from_email, [customer_email], fail_silently=True)
+                        subject = f"Order Payment Successful - Order #{order.id}"
+                        if customer_email:
+                             if not order.email:
+                                 order.email = customer_email
+                                 order.save()
+
+                             send_result = send_mail(subject, body, from_email, [customer_email], fail_silently=False)
+                             with open('/tmp/webhook_debug.log', 'a') as f:
+                                 f.write(f"Customer email send result: {send_result} to {customer_email}\n")
+                             print(f"Email send result for order {order.id}: {send_result}")
 
                         admin_email = getattr(settings, 'ADMIN_EMAIL', None) or from_email
-                        admin_subject = f"New Order Paid - #{order.id}"
+                        admin_subject = f"Order Payment Confirmed - #{order.id}"
                         admin_body = f"Order {order.id} has been paid by {customer_email}.\n\n" + body
-                        send_mail(admin_subject, admin_body, from_email, [admin_email], fail_silently=True)
+                        admin_send_result = send_mail(admin_subject, admin_body, from_email, [admin_email], fail_silently=False)
+                        with open('/tmp/webhook_debug.log', 'a') as f:
+                             f.write(f"Admin email send result: {admin_send_result} to {admin_email}\n")
                     except Exception as e:
-                        print(f"Error sending order confirmation emails: {e}")
-                except Order.DoesNotExist:
-                    pass
+                        with open('/tmp/webhook_debug.log', 'a') as f:
+                             f.write(f"EMAIL ERROR: {str(e)}\n")
+                        print(f"Error sending order confirmation emails for order {order.id}: {e}")
+                except Exception as e:
+                    with open('/tmp/webhook_debug.log', 'a') as f:
+                         f.write(f"WEBHOOK ERROR: {str(e)}\n")
+                    print(f"Unexpected error processing order {order.id} in webhook: {e}")
+            else:
+                with open('/tmp/webhook_debug.log', 'a') as f:
+                     f.write(f"Order NOT FOUND. session_id: {session_id}, order_id: {order_id}\n")
+                print(f"Order not found for session {session_id}, client_ref {order_id}, metadata_id {metadata_order_id}")
 
             # Handle Subscription Creation
             if session.get('mode') == 'subscription':
                 subscription_id = session.get('subscription')
-                user_email = session.get('customer_email')
+                user_email = session.get('customer_email') or session.get('customer_details', {}).get('email')
                 
-                try:
-                    user = User.objects.get(email=user_email)
-                    # Retrieve subscription details from Stripe to get items
-                    stripe_subscription = stripe.Subscription.retrieve(subscription_id)
-                    
-                    for item in stripe_subscription['items']['data']:
-                        price_id = item['price']['id']
-                        # Find product by price_id
-                        product = Product.objects.filter(stripe_subscription_price_id=price_id).first()
+                if user_email:
+                    try:
+                        user = User.objects.get(email=user_email)
+                        # Retrieve subscription details from Stripe to get items
+                        stripe_subscription = stripe.Subscription.retrieve(subscription_id)
                         
-                        if product:
-                            UserSubscription.objects.create(
-                                user=user,
-                                product=product,
-                                stripe_subscription_id=subscription_id,
-                                stripe_subscription_item_id=item['id'],
-                                quantity=item['quantity'],
-                                status='Active'
-                            )
-                except Exception as e:
-                    print(f"Error processing subscription webhook: {e}")
+                        for item in stripe_subscription['items']['data']:
+                            price_id = item['price']['id']
+                            # Find product by price_id
+                            product = Product.objects.filter(stripe_subscription_price_id=price_id).first()
+                            
+                            if product:
+                                UserSubscription.objects.create(
+                                    user=user,
+                                    product=product,
+                                    stripe_subscription_id=subscription_id,
+                                    stripe_subscription_item_id=item['id'],
+                                    quantity=item['quantity'],
+                                    status='Active'
+                                )
+                    except Exception as e:
+                        print(f"Error processing subscription webhook: {e}")
         
         return Response(status=status.HTTP_200_OK)
 

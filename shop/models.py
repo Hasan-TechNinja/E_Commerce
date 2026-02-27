@@ -162,7 +162,7 @@ class OrderAddress(models.Model):
     order = models.OneToOneField(Order, on_delete=models.CASCADE)
     name = models.CharField(max_length=255)
     phone = models.CharField(max_length=100)
-    address = models.CharField(max_length=100)
+    address = models.CharField(max_length=255)
     type = models.CharField(choices=[('home', 'Home'), ('office', 'Office')], max_length=10)
 
     def __str__(self):
