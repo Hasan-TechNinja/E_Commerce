@@ -11,7 +11,7 @@ import base64
 import decimal
 from django.db.models import Avg, Q
 from django.db import transaction
-from django.core.mail import send_mail
+from django.core.mail import send_mail, EmailMessage
 import stripe
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
@@ -480,13 +480,26 @@ class StripeWebhookView(APIView):
                         lines.append(f"Status: {order.status}")
                         body = "\n".join(lines)
 
+                        pdf_bytes = None
+                        try:
+                            from .utils import generate_order_pdf
+                            pdf_bytes = generate_order_pdf(order)
+                        except Exception as pdf_err:
+                            with open('/tmp/webhook_debug.log', 'a') as f:
+                                f.write(f"PDF GENERATION ERROR: {str(pdf_err)}\n")
+                            print(f"Error generating PDF for order {order.id}: {pdf_err}")
+
                         subject = f"Order Payment Successful - Order #{order.id}"
                         if customer_email:
                              if not order.email:
                                  order.email = customer_email
                                  order.save()
 
-                             send_result = send_mail(subject, body, from_email, [customer_email], fail_silently=False)
+                             msg = EmailMessage(subject, body, from_email, [customer_email])
+                             if pdf_bytes:
+                                 msg.attach('Order_Details.pdf', pdf_bytes, 'application/pdf')
+                             send_result = msg.send(fail_silently=False)
+                             
                              with open('/tmp/webhook_debug.log', 'a') as f:
                                  f.write(f"Customer email send result: {send_result} to {customer_email}\n")
                              print(f"Email send result for order {order.id}: {send_result}")
@@ -494,7 +507,12 @@ class StripeWebhookView(APIView):
                         admin_email = getattr(settings, 'ADMIN_EMAIL', None) or from_email
                         admin_subject = f"Order Payment Confirmed - #{order.id}"
                         admin_body = f"Order {order.id} has been paid by {customer_email}.\n\n" + body
-                        admin_send_result = send_mail(admin_subject, admin_body, from_email, [admin_email], fail_silently=False)
+                        
+                        msg_admin = EmailMessage(admin_subject, admin_body, from_email, [admin_email])
+                        if pdf_bytes:
+                             msg_admin.attach('Order_Details.pdf', pdf_bytes, 'application/pdf')
+                        admin_send_result = msg_admin.send(fail_silently=False)
+                        
                         with open('/tmp/webhook_debug.log', 'a') as f:
                              f.write(f"Admin email send result: {admin_send_result} to {admin_email}\n")
                     except Exception as e:
