@@ -117,7 +117,7 @@ class CartView(APIView):
         if subtotal > decimal.Decimal('250.00'):
             shipping_fee = decimal.Decimal('0.00')
         else:
-            shipping_fee = decimal.Decimal('5.00')
+            shipping_fee = decimal.Decimal('1.00')
 
         total = subtotal + shipping_fee + extra_charge
         
@@ -243,7 +243,7 @@ class CheckoutView(APIView):
         if total_price > decimal.Decimal('250.00'):
             shipping_fee = decimal.Decimal('0.00')
         else:
-            shipping_fee = decimal.Decimal('50.00')
+            shipping_fee = decimal.Decimal('1.00')
             
         extra_charge = sum(decimal.Decimal('10.00') * item.quantity for item in cart_items if getattr(item, 'reconstitute_pen', False))
 
