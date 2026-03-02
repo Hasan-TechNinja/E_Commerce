@@ -23,7 +23,8 @@ class CheckoutViewTests(TestCase):
             description='Test Description',
             size='M',
             category='Merchandise',
-            type=self.type
+            type=self.type,
+            stock_quantity=100
         )
         self.url = reverse('checkout')
 
@@ -184,13 +185,13 @@ class CheckoutViewTests(TestCase):
     # ✅ Free T-shirt Tests
     @patch('shop.views.stripe.checkout.Session.create')
     def test_checkout_with_free_tshirt_eligible(self, mock_stripe_create):
-        """Test that orders with subtotal <= 1500 get free T-shirt when size is provided"""
+        """Test that orders with subtotal >= 500 get free T-shirt when size is provided"""
         mock_session = MagicMock()
         mock_session.id = 'cs_test_free_tshirt'
         mock_session.url = 'https://checkout.stripe.com/pay/cs_test_free_tshirt'
         mock_stripe_create.return_value = mock_session
 
-        # Create cart with total <= 1500 (product price = 90, quantity = 10 = 900)
+        # Create cart with total >= 500 (product price = 90, quantity = 10 = 900)
         CartItem.objects.create(user=self.user, product=self.product, quantity=10)
 
         data = {
@@ -229,7 +230,7 @@ class CheckoutViewTests(TestCase):
     @patch('shop.views.stripe.checkout.Session.create')
     def test_checkout_free_tshirt_missing_size(self, mock_stripe_create):
         """Test that eligible orders without size selection get error"""
-        # Create cart with total <= 1500
+        # Create cart with total >= 500
         CartItem.objects.create(user=self.user, product=self.product, quantity=10)
 
         data = {
@@ -271,24 +272,25 @@ class CheckoutViewTests(TestCase):
         self.assertEqual(Order.objects.count(), 0)
 
     @patch('shop.views.stripe.checkout.Session.create')
-    def test_checkout_no_free_tshirt_for_expensive_order(self, mock_stripe_create):
-        """Test that orders with subtotal > 1500 don't get free T-shirt"""
+    def test_checkout_no_free_tshirt_for_cheap_order(self, mock_stripe_create):
+        """Test that orders with subtotal < 500 don't get free T-shirt"""
         mock_session = MagicMock()
         mock_session.id = 'cs_test_expensive'
         mock_session.url = 'https://checkout.stripe.com/pay/cs_test_expensive'
         mock_stripe_create.return_value = mock_session
 
-        # Create expensive product
-        expensive_product = Product.objects.create(
-            name='Expensive Product',
-            initial_price=2000.00,
-            discounted_price=1600.00,
-            description='Expensive Description',
+        # Create cheap product
+        cheap_product = Product.objects.create(
+            name='Cheap Product',
+            initial_price=400.00,
+            discounted_price=300.00,
+            description='Cheap Description',
             size='L',
             category='Health',
-            type=self.type
+            type=self.type,
+            stock_quantity=100
         )
-        CartItem.objects.create(user=self.user, product=expensive_product, quantity=1)
+        CartItem.objects.create(user=self.user, product=cheap_product, quantity=1)
 
         data = {
             'address': {
@@ -311,7 +313,7 @@ class CheckoutViewTests(TestCase):
 
     @patch('shop.views.stripe.checkout.Session.create')
     def test_checkout_multiple_products_with_free_tshirt(self, mock_stripe_create):
-        """Test checkout with multiple products in cart total <= 1500"""
+        """Test checkout with multiple products in cart total >= 500"""
         mock_session = MagicMock()
         mock_session.id = 'cs_test_multi'
         mock_session.url = 'https://checkout.stripe.com/pay/cs_test_multi'
@@ -325,7 +327,8 @@ class CheckoutViewTests(TestCase):
             description='Product 2',
             size='S',
             category='Merchandise',
-            type=self.type
+            type=self.type,
+            stock_quantity=100
         )
         product3 = Product.objects.create(
             name='Product 3',
@@ -334,7 +337,8 @@ class CheckoutViewTests(TestCase):
             description='Product 3',
             size='M',
             category='Health',
-            type=self.type
+            type=self.type,
+            stock_quantity=100
         )
 
         # Add to cart: 90*5 + 40*3 + 50*2 = 450 + 120 + 100 = 670

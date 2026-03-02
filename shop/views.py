@@ -121,8 +121,8 @@ class CartView(APIView):
 
         total = subtotal + shipping_fee + extra_charge
         
-        # Check if eligible for free T-shirt (subtotal <= 1500)
-        eligible_for_free_tshirt = subtotal >= decimal.Decimal('1500.00') and cart_items.exists()
+        # Check if eligible for free T-shirt (subtotal >= 500)
+        eligible_for_free_tshirt = subtotal >= decimal.Decimal('500.00') and cart_items.exists()
 
         return Response({
             'items': serializer.data,
@@ -248,7 +248,7 @@ class CheckoutView(APIView):
         extra_charge = sum(decimal.Decimal('10.00') * item.quantity for item in cart_items if getattr(item, 'reconstitute_pen', False))
 
         # Free T-shirt eligibility check
-        eligible_for_free_tshirt = total_price >= decimal.Decimal('1500.00')
+        eligible_for_free_tshirt = total_price >= decimal.Decimal('500.00')
         if eligible_for_free_tshirt:
             if not free_tshirt_size:
                  return Response({"error": "You are eligible for a free T-shirt! Please select your T-shirt size (S, L, M, XL, XXL)."}, status=status.HTTP_400_BAD_REQUEST)
