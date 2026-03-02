@@ -50,7 +50,7 @@ class RegisterView(APIView):
                 send_mail(
                     "Resend Verification Code",
                     f"Your new verification code is {code}",
-                    "noreply@yourdomain.com",
+                    None,
                     [email],
                 )
 
@@ -77,7 +77,7 @@ class RegisterView(APIView):
             send_mail(
                 "Registration Verification Code",
                 f"Your verification code is {code}",
-                "noreply@yourdomain.com",
+                None,
                 [email],
             )
 
@@ -193,7 +193,7 @@ class ForgetPasswordCodeSend(APIView):
         send_mail(
             "Password reset Code",
             f"Your password reset code is: {code}",
-            "noreply@yourdomain.com",
+            None,
             [email],
         )
 
@@ -350,7 +350,7 @@ class SocialLogin(APIView):
         send_mail(
             "Welcome to Our Platform",
             f"Hi {user.username}, your account has been created successfully via social login.",
-            "noreply@yourdomain.com",
+            None,
             [user.email],
             fail_silently=True,
         )

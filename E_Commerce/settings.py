@@ -190,14 +190,15 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 
+# settings.py
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp.gmail.com'
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
+EMAIL_HOST = 'smtp.titan.email'
+EMAIL_PORT = 465          # Changed from 587
+EMAIL_USE_TLS = False     # Changed to False
+EMAIL_USE_SSL = True      # Changed to True
 EMAIL_HOST_USER = config("EMAIL_USER")
 EMAIL_HOST_PASSWORD = config("EMAIL_PASS")
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
-ADMIN_EMAIL = config("ADMIN_EMAIL")
 
 STRIPE_PUBLIC_KEY = config('STRIPE_PUBLIC_KEY', default='pk_test_...')
 STRIPE_SECRET_KEY = config('STRIPE_SECRET_KEY', default='sk_test_...')
