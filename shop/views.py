@@ -469,16 +469,59 @@ class StripeWebhookView(APIView):
                         from_email = settings.DEFAULT_FROM_EMAIL
 
                         # Build order summary
-                        items = order.items.all()
-                        lines = [f"Thank you for your order #{order.id}."]
-                        lines.append(f"Total: {order.total_price}")
-                        lines.append("Items:")
-                        for it in items:
+                        customer_name = "Customer"
+                        customer_address = "N/A"
+                        if hasattr(order, 'orderaddress'):
+                            customer_name = order.orderaddress.name.split()[0] if order.orderaddress.name else "Customer"
+                            customer_address = f"{order.orderaddress.name}\n{order.orderaddress.address}\n{order.orderaddress.phone}"
+
+                        order_date = order.created_at.strftime('%B %d, %Y')
+                        payment_method = "Card"
+                        total_paid = order.total_price + order.shipping_fee + getattr(order, 'extra_charge', 0)
+
+                        items_str = ""
+                        for it in order.items.all():
                             prod_name = it.product.name if it.product else 'Free item'
-                            lines.append(f"- {prod_name} x{it.quantity} @ {it.price}")
-                        lines.append(f"Shipping Fee: {order.shipping_fee}")
-                        lines.append(f"Status: {order.status}")
-                        body = "\n".join(lines)
+                            items_str += f"• {prod_name} - Qty: {it.quantity}\n"
+
+                        body = f"""Hi {customer_name},
+ 
+Thank you for your order with Boosted Labs.
+ 
+We’ve received your payment and your order is now being processed.
+ 
+⸻
+ 
+🧾 Order Summary
+ 
+Order Number: BL-{order.id}
+Order Date: {order_date}
+Payment Method: {payment_method}
+ 
+Items Ordered:
+{items_str.strip()}
+ 
+Subtotal: ${order.total_price}
+Shipping: ${order.shipping_fee}
+Total Paid: ${total_paid}
+ 
+⸻
+ 
+📦 Shipping Information
+ 
+Shipping Address:
+{customer_address}
+ 
+Your tracking details will be sent via email once your order has been dispatched.
+ 
+⸻
+ 
+🔬 Important Notice
+ 
+All products supplied by Boosted Labs are intended strictly for research and laboratory use only.
+They are not approved for human consumption or therapeutic use.
+ 
+By purchasing, you acknowledge that you understand the intended purpose of these products."""
 
                         pdf_bytes = None
                         try:
