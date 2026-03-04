@@ -45,10 +45,19 @@ def generate_order_pdf(order):
     # Items Table
     data = [['Product', 'Quantity', 'Price']]
     for item in order.items.all():
-        name = item.product.name if item.product else ('Free item' if getattr(item, 'is_free_item', False) else 'Unknown')
-        
-        reconstitute = "\n(With Reconstitute Pen)" if getattr(item, 'reconstitute_pen', False) else ""
-        data.append([f"{name}{reconstitute}", str(item.quantity), f"${item.price}"])
+        if getattr(item, 'is_free_item', False):
+            name = f"Free T-shirt (Size: {getattr(item, 'free_item_size', 'N/A')})"
+        elif item.product:
+            name = item.product.name
+            if getattr(item, 'ordered_size', None):
+                name += f"\n(Size: {item.ordered_size})"
+            if getattr(item, 'ordered_color_name', None):
+                name += f"\n(Color: {item.ordered_color_name})"
+        else:
+            name = 'Item'
+            
+        reconstitute = "\n[Includes Reconstitute Pen]" if getattr(item, 'reconstitute_pen', False) else ""
+        data.append([f"{name}{reconstitute}", str(item.quantity), f"${item.price:.2f}"])
     
     table = Table(data, colWidths=[300, 100, 100])
     table.setStyle(TableStyle([
@@ -65,13 +74,13 @@ def generate_order_pdf(order):
     elements.append(Spacer(1, 12))
     
     # Summary
-    summary_info = f"<b>Subtotal:</b> ${order.total_price}<br/>"
-    summary_info += f"<b>Shipping Fee:</b> ${order.shipping_fee}<br/>"
+    summary_info = f"<b>Subtotal:</b> ${order.total_price:.2f}<br/>"
     if hasattr(order, 'extra_charge') and order.extra_charge > 0:
-        summary_info += f"<b>Extra Charge:</b> ${order.extra_charge}<br/>"
+        summary_info += f"<b>Reconstitute Pen Charge:</b> ${order.extra_charge:.2f}<br/>"
+    summary_info += f"<b>Shipping Fee:</b> ${order.shipping_fee:.2f}<br/>"
     
     total = order.total_price + order.shipping_fee + getattr(order, 'extra_charge', 0)
-    summary_info += f"<br/><b>Total:</b> ${total}"
+    summary_info += f"<br/><b>Total Paid:</b> ${total:.2f}"
     
     summary_style = ParagraphStyle('Summary', parent=styles['Normal'], alignment=2) # Right align
     elements.append(Paragraph(summary_info, summary_style))

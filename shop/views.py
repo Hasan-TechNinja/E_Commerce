@@ -481,14 +481,31 @@ class StripeWebhookView(APIView):
 
                         items_str = ""
                         for it in order.items.all():
-                            prod_name = it.product.name if it.product else 'Free item'
-                            items_str += f"• {prod_name} - Qty: {it.quantity}\n"
+                            if it.is_free_item:
+                                prod_name = f"Free T-shirt (Size: {it.free_item_size})"
+                                item_total_str = "Free"
+                            elif it.product:
+                                prod_name = it.product.name
+                                if it.ordered_size:
+                                    prod_name += f" (Size: {it.ordered_size})"
+                                if it.ordered_color_name:
+                                    prod_name += f" (Color: {it.ordered_color_name})"
+                                if getattr(it, 'reconstitute_pen', False):
+                                    prod_name += " [Includes Reconstitute Pen]"
+                                item_total_str = f"${(it.price * it.quantity):.2f}"
+                            else:
+                                prod_name = "Item"
+                                item_total_str = f"${(it.price * it.quantity):.2f}"
+                                
+                            items_str += f"• {prod_name} - Qty: {it.quantity} - {item_total_str}\n"
 
-                        body = f"""Hi {customer_name},
+                        extra_charge_str = f"Reconstitute Pen Charge: ${order.extra_charge:.2f}\n" if getattr(order, 'extra_charge', 0) > 0 else ""
+
+                        body = f"""Dear {customer_name},
  
-Thank you for your order with Boosted Labs.
+Thank you for choosing Boosted Labs. We appreciate your business!
  
-We’ve received your payment and your order is now being processed.
+This email is to confirm that we have successfully received your payment, and your order is currently being processed by our team.
  
 ⸻
  
@@ -501,9 +518,9 @@ Payment Method: {payment_method}
 Items Ordered:
 {items_str.strip()}
  
-Subtotal: ${order.total_price}
-Shipping: ${order.shipping_fee}
-Total Paid: ${total_paid}
+Subtotal: ${order.total_price:.2f}
+{extra_charge_str}Shipping: ${order.shipping_fee:.2f}
+Total Paid: ${total_paid:.2f}
  
 ⸻
  
@@ -512,16 +529,18 @@ Total Paid: ${total_paid}
 Shipping Address:
 {customer_address}
  
-Your tracking details will be sent via email once your order has been dispatched.
+You will receive a separate email containing your tracking information as soon as your order has been dispatched.
  
 ⸻
  
 🔬 Important Notice
  
-All products supplied by Boosted Labs are intended strictly for research and laboratory use only.
-They are not approved for human consumption or therapeutic use.
+All products supplied by Boosted Labs are intended strictly for research and laboratory use only. They are not approved for human consumption or therapeutic use. By purchasing, you acknowledge that you understand the intended purpose of these products.
  
-By purchasing, you acknowledge that you understand the intended purpose of these products."""
+If you have any questions or require further assistance regarding your order, please do not hesitate to contact our support team.
+ 
+Best regards,
+The Boosted Labs Team"""
 
                         pdf_bytes = None
                         try:
