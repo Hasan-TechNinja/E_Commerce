@@ -43,9 +43,9 @@ class MerchandiseProductView(APIView):
 class ProductDetailView(APIView):
     permission_classes = [permissions.AllowAny]
     
-    def get(self, request, pk):
+    def get(self, request, slug):
         try: 
-            product = Product.objects.get(pk=pk)
+            product = Product.objects.get(slug=slug)
         except Product.DoesNotExist:
             return Response({"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND)
         
@@ -66,9 +66,9 @@ class ProductDetailView(APIView):
 
 class AddToCartView(APIView):
     permission_classes = [permissions.IsAuthenticated]
-    def post(self, request, pk):
+    def post(self, request, slug):
         try:
-            product = Product.objects.get(pk=pk)
+            product = Product.objects.get(slug=slug)
         except Product.DoesNotExist:
             return Response({"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND)
 
@@ -650,10 +650,10 @@ class OrderDetailView(APIView):
 class CreateReviewView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
-    def post(self, request, pk):
+    def post(self, request, slug):
         # Check if product exists
         try:
-            product = Product.objects.get(pk=pk)
+            product = Product.objects.get(slug=slug)
         except Product.DoesNotExist:
             return Response({"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND)
 
@@ -782,9 +782,9 @@ class TypeFilterView(APIView):
 class ProductReviewStatsView(APIView):
     permission_classes = [permissions.AllowAny]
 
-    def get(self, request, pk):
+    def get(self, request, slug):
         try:
-            product = Product.objects.get(pk=pk)
+            product = Product.objects.get(slug=slug)
         except Product.DoesNotExist:
             return Response({"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND)
 

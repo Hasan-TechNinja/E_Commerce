@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import User
 from django.core.validators import MinValueValidator, MaxValueValidator
+from django.utils.text import slugify
 
 # Create your models here.
 
@@ -39,6 +40,7 @@ class Product(models.Model):
     name = models.CharField(max_length=100)
     initial_price = models.DecimalField(max_digits=10, decimal_places=2)
     discounted_price = models.DecimalField(max_digits=10, decimal_places=2)
+    slug = models.SlugField(max_length=255, unique=True, blank=True, null=True)
     description = models.TextField(max_length=10000)
     # Deprecated single size field - use available_sizes instead
     size = models.CharField(choices=PRODUCT_SIZE_CHOICES, max_length=2, blank=True, null=True)
@@ -57,6 +59,19 @@ class Product(models.Model):
     stock_quantity = models.IntegerField(default=0)
     stock_status = models.CharField(max_length=20, choices=STOCK_STATUS_CHOICES, default='in_stock')
     reconstitute_pen = models.BooleanField(default=False)
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = slugify(self.name)
+            # handle uniqueness if needed, but for now just use slugify
+            original_slug = self.slug
+            queryset = Product.objects.filter(slug__iexact=self.slug)
+            counter = 1
+            while queryset.exists() and queryset.first().id != self.id:
+                self.slug = f"{original_slug}-{counter}"
+                counter += 1
+                queryset = Product.objects.filter(slug__iexact=self.slug)
+        super(Product, self).save(*args, **kwargs)
 
     def __str__(self):
         return self.name
