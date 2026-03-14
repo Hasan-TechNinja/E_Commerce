@@ -12,13 +12,13 @@ def handle_orderitem_saved(sender, instance, created, **kwargs):
       decrement the Product.stock_quantity by the OrderItem.quantity and mark `stock_adjusted=True`.
     - If the Order is cancelled and this item had previously adjusted stock, restore it (handled in order handler).
     """
-    order = instance.order
-    product = instance.product
-    if not product:
-        return
-
-    # Decrement stock when order is paid and item not yet adjusted
     try:
+        order = instance.order
+        product = instance.product
+        if not product:
+            return
+
+        # Decrement stock when order is paid and item not yet adjusted
         if getattr(order, 'is_paid', False) and not instance.stock_adjusted:
             with transaction.atomic():
                 product.stock_quantity = (product.stock_quantity or 0) - instance.quantity
@@ -36,10 +36,10 @@ def handle_orderitem_deleted(sender, instance, **kwargs):
     """
     If an OrderItem that had adjusted stock is deleted, restore the stock.
     """
-    product = instance.product
-    if not product:
-        return
     try:
+        product = instance.product
+        if not product:
+            return
         if instance.stock_adjusted:
             with transaction.atomic():
                 product.stock_quantity = (product.stock_quantity or 0) + instance.quantity
